@@ -1,75 +1,70 @@
-import { autocompletion, insertCompletionText } from "@codemirror/autocomplete";
-import { setDiagnostics } from "@codemirror/lint";
-import { Facet } from "@codemirror/state";
-import { EditorView, hoverTooltip, Tooltip, ViewPlugin } from "@codemirror/view";
+import { autocompletion, insertCompletionText } from '@codemirror/autocomplete';
+import { setDiagnostics } from '@codemirror/lint';
+import { Facet } from '@codemirror/state';
+import {
+    EditorView,
+    hoverTooltip,
+    Tooltip,
+    ViewPlugin,
+} from '@codemirror/view';
 import {
     Client,
     RequestManager,
     WebSocketTransport,
-} from "@open-rpc/client-js";
+} from '@open-rpc/client-js';
 import {
     CompletionItemKind,
     CompletionTriggerKind,
     DiagnosticSeverity,
-} from "vscode-languageserver-protocol";
+} from 'vscode-languageserver-protocol';
 
 import type {
     Completion,
     CompletionContext,
     CompletionResult,
-} from "@codemirror/autocomplete";
-import type { Text } from "@codemirror/state";
-import type { PluginValue, ViewUpdate } from "@codemirror/view";
-import { Transport } from "@open-rpc/client-js/build/transports/Transport";
-import { marked } from "marked/lib/marked.esm.js";
-import type { PublishDiagnosticsParams } from "vscode-languageserver-protocol";
-import type * as LSP from "vscode-languageserver-protocol";
+} from '@codemirror/autocomplete';
+import type { Text } from '@codemirror/state';
+import type { PluginValue, ViewUpdate } from '@codemirror/view';
+import { Transport } from '@open-rpc/client-js/build/transports/Transport';
+import { marked } from 'marked/lib/marked.esm.js';
+import type { PublishDiagnosticsParams } from 'vscode-languageserver-protocol';
+import type * as LSP from 'vscode-languageserver-protocol';
+import type {
+    LSPRequestMap,
+    LSPNotifyMap,
+    LSPEventMap,
+    Notification,
+    LanguageServerBaseOptions,
+    LanguageServerClientOptions,
+    LanguageServerOptions,
+    LanguageServerWebsocketOptions,
+    PyrightInitializationOptions,
+    RustAnalyzerInitializationOptions,
+    TypeScriptInitializationOptions,
+    ESLintInitializationOptions,
+    ClangdInitializationOptions,
+    GoplsInitializationOptions,
+} from './index.d';
 
 const timeout = 10000;
 const changesDelay = 500;
 
 const CompletionItemKindMap = Object.fromEntries(
-    Object.entries(CompletionItemKind).map(([key, value]) => [value, key]),
+    Object.entries(CompletionItemKind).map(([key, value]) => [value, key])
 ) as Record<CompletionItemKind, string>;
 
-const useLast = (values: readonly any[]) => values.reduce((_, v) => v, "");
+const useLast = (values: readonly any[]) => values.reduce((_, v) => v, '');
 
-const client = Facet.define<LanguageServerClient, LanguageServerClient>({ combine: useLast });
+const client = Facet.define<
+    LanguageServerClient<any>,
+    LanguageServerClient<any>
+>({ combine: useLast });
 const documentUri = Facet.define<string, string>({ combine: useLast });
 const languageId = Facet.define<string, string>({ combine: useLast });
 
 // https://microsoft.github.io/language-server-protocol/specifications/specification-current/
 
-// Client to server then server to client
-interface LSPRequestMap {
-    initialize: [LSP.InitializeParams, LSP.InitializeResult];
-    "textDocument/hover": [LSP.HoverParams, LSP.Hover];
-    "textDocument/completion": [
-        LSP.CompletionParams,
-        LSP.CompletionItem[] | LSP.CompletionList | null
-    ];
-}
-
-// Client to server
-interface LSPNotifyMap {
-    initialized: LSP.InitializedParams;
-    "textDocument/didChange": LSP.DidChangeTextDocumentParams;
-    "textDocument/didOpen": LSP.DidOpenTextDocumentParams;
-}
-
-// Server to client
-interface LSPEventMap {
-    "textDocument/publishDiagnostics": LSP.PublishDiagnosticsParams;
-}
-
-type Notification = {
-    [key in keyof LSPEventMap]: {
-        jsonrpc: "2.0";
-        id?: null | undefined;
-        method: key;
-        params: LSPEventMap[key];
-    };
-}[keyof LSPEventMap];
+// Types are imported from index.d.ts
 
 export class LanguageServerClient<TInitOptions = unknown> {
     public ready: boolean;
@@ -93,7 +88,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
         this.workspaceFolders = options.workspaceFolders;
         this.autoClose = options.autoClose;
         this.plugins = [];
-        this.transport =  options.transport;
+        this.transport = options.transport;
 
         this.requestManager = new RequestManager([this.transport]);
         this.client = new Client(this.requestManager);
@@ -106,28 +101,33 @@ export class LanguageServerClient<TInitOptions = unknown> {
         if (webSocketTransport && webSocketTransport.connection) {
             // XXX(hjr265): Need a better way to do this. Relevant issue:
             // https://github.com/FurqanSoftware/codemirror-languageserver/issues/9
-            webSocketTransport.connection.addEventListener("message", (message) => {
-                const data = JSON.parse(message.data);
-                if (data.method && data.id) {
-                    webSocketTransport.connection.send(JSON.stringify({
-                        jsonrpc: "2.0",
-                        id: data.id,
-                        result: null,
-                    }));
+            webSocketTransport.connection.addEventListener(
+                'message',
+                (message) => {
+                    const data = JSON.parse(message.data);
+                    if (data.method && data.id) {
+                        webSocketTransport.connection.send(
+                            JSON.stringify({
+                                jsonrpc: '2.0',
+                                id: data.id,
+                                result: null,
+                            })
+                        );
+                    }
                 }
-            });
+            );
         }
 
         this.initializePromise = this.initialize();
     }
 
-    protected getInitializationOptions(): LSP.InitializeParams["initializationOptions"] {
+    protected getInitializationOptions(): LSP.InitializeParams['initializationOptions'] {
         return {
             capabilities: {
                 textDocument: {
                     hover: {
                         dynamicRegistration: true,
-                        contentFormat: ["plaintext", "markdown"],
+                        contentFormat: ['plaintext', 'markdown'],
                     },
                     moniker: {},
                     synchronization: {
@@ -141,7 +141,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
                         completionItem: {
                             snippetSupport: false,
                             commitCharactersSupport: true,
-                            documentationFormat: ["plaintext", "markdown"],
+                            documentationFormat: ['plaintext', 'markdown'],
                             deprecatedSupport: false,
                             preselectSupport: false,
                         },
@@ -150,7 +150,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
                     signatureHelp: {
                         dynamicRegistration: true,
                         signatureInformation: {
-                            documentationFormat: ["plaintext", "markdown"],
+                            documentationFormat: ['plaintext', 'markdown'],
                         },
                     },
                     declaration: {
@@ -180,17 +180,17 @@ export class LanguageServerClient<TInitOptions = unknown> {
             processId: null,
             rootUri: this.rootUri,
             workspaceFolders: this.workspaceFolders,
-        }
+        };
     }
 
     public async initialize() {
         const { capabilities } = await this.request(
-            "initialize",
+            'initialize',
             this.getInitializationOptions(),
-            timeout * 3,
+            timeout * 3
         );
         this.capabilities = capabilities;
-        this.notify("initialized", {});
+        this.notify('initialized', {});
         this.ready = true;
     }
 
@@ -199,19 +199,19 @@ export class LanguageServerClient<TInitOptions = unknown> {
     }
 
     public textDocumentDidOpen(params: LSP.DidOpenTextDocumentParams) {
-        return this.notify("textDocument/didOpen", params);
+        return this.notify('textDocument/didOpen', params);
     }
 
     public textDocumentDidChange(params: LSP.DidChangeTextDocumentParams) {
-        return this.notify("textDocument/didChange", params);
+        return this.notify('textDocument/didChange', params);
     }
 
     public async textDocumentHover(params: LSP.HoverParams) {
-        return await this.request("textDocument/hover", params, timeout);
+        return await this.request('textDocument/hover', params, timeout);
     }
 
     public async textDocumentCompletion(params: LSP.CompletionParams) {
-        return await this.request("textDocument/completion", params, timeout);
+        return await this.request('textDocument/completion', params, timeout);
     }
 
     public attachPlugin(plugin: LanguageServerPlugin) {
@@ -220,22 +220,26 @@ export class LanguageServerClient<TInitOptions = unknown> {
 
     public detachPlugin(plugin: LanguageServerPlugin) {
         const i = this.plugins.indexOf(plugin);
-        if (i === -1) { return; }
+        if (i === -1) {
+            return;
+        }
         this.plugins.splice(i, 1);
-        if (this.autoClose) { this.close(); }
+        if (this.autoClose) {
+            this.close();
+        }
     }
 
     protected request<K extends keyof LSPRequestMap>(
         method: K,
         params: LSPRequestMap[K][0],
-        timeout: number,
+        timeout: number
     ): Promise<LSPRequestMap[K][1]> {
         return this.client.request({ method, params }, timeout);
     }
 
     protected notify<K extends keyof LSPNotifyMap>(
         method: K,
-        params: LSPNotifyMap[K],
+        params: LSPNotifyMap[K]
     ): Promise<LSPNotifyMap[K]> {
         return this.client.notify({ method, params });
     }
@@ -271,8 +275,12 @@ class LanguageServerPlugin implements PluginValue {
     }
 
     public update({ docChanged }: ViewUpdate) {
-        if (!docChanged) { return; }
-        if (this.changesTimeout) { clearTimeout(this.changesTimeout); }
+        if (!docChanged) {
+            return;
+        }
+        if (this.changesTimeout) {
+            clearTimeout(this.changesTimeout);
+        }
         this.changesTimeout = self.setTimeout(() => {
             this.sendChange({
                 documentText: this.view.state.doc.toString(),
@@ -285,10 +293,10 @@ class LanguageServerPlugin implements PluginValue {
     }
 
     public async initialize({ documentText }: { documentText: string }) {
-         if (this.client.initializePromise) {
+        if (this.client.initializePromise) {
             await this.client.initializePromise;
         }
-         this.client.textDocumentDidOpen({
+        this.client.textDocumentDidOpen({
             textDocument: {
                 uri: this.documentUri,
                 languageId: this.languageId,
@@ -299,7 +307,9 @@ class LanguageServerPlugin implements PluginValue {
     }
 
     public async sendChange({ documentText }: { documentText: string }) {
-        if (!this.client.ready) { return; }
+        if (!this.client.ready) {
+            return;
+        }
         try {
             await this.client.textDocumentDidChange({
                 textDocument: {
@@ -319,16 +329,20 @@ class LanguageServerPlugin implements PluginValue {
 
     public async requestHoverTooltip(
         view: EditorView,
-        { line, character }: { line: number; character: number },
+        { line, character }: { line: number; character: number }
     ): Promise<Tooltip | null> {
-        if (!this.client.ready || !this.client.capabilities!.hoverProvider) { return null; }
+        if (!this.client.ready || !this.client.capabilities!.hoverProvider) {
+            return null;
+        }
 
         this.sendChange({ documentText: view.state.doc.toString() });
         const result = await this.client.textDocumentHover({
             textDocument: { uri: this.documentUri },
             position: { line, character },
         });
-        if (!result) { return null; }
+        if (!result) {
+            return null;
+        }
         const { contents, range } = result;
         let pos = posToOffset(view.state.doc, { line, character })!;
         let end: number;
@@ -336,9 +350,11 @@ class LanguageServerPlugin implements PluginValue {
             pos = posToOffset(view.state.doc, range.start)!;
             end = posToOffset(view.state.doc, range.end);
         }
-        if (pos === null) { return null; }
-        const dom = document.createElement("div");
-        dom.classList.add("documentation");
+        if (pos === null) {
+            return null;
+        }
+        const dom = document.createElement('div');
+        dom.classList.add('documentation');
         if (this.allowHTMLContent) {
             dom.innerHTML = formatContents(contents);
         } else {
@@ -361,9 +377,14 @@ class LanguageServerPlugin implements PluginValue {
         }: {
             triggerKind: CompletionTriggerKind;
             triggerCharacter: string | undefined;
-        },
+        }
     ): Promise<CompletionResult | null> {
-        if (!this.client.ready || !this.client.capabilities!.completionProvider) { return null; }
+        if (
+            !this.client.ready ||
+            !this.client.capabilities!.completionProvider
+        ) {
+            return null;
+        }
         this.sendChange({
             documentText: context.state.doc.toString(),
         });
@@ -377,9 +398,11 @@ class LanguageServerPlugin implements PluginValue {
             },
         });
 
-        if (!result) { return null; }
+        if (!result) {
+            return null;
+        }
 
-        let items = "items" in result ? result.items : result;
+        let items = 'items' in result ? result.items : result;
 
         const [span, match] = prefixMatch(items);
         const token = context.matchBefore(match);
@@ -422,39 +445,76 @@ class LanguageServerPlugin implements PluginValue {
                 const completion: Completion = {
                     label,
                     detail,
-                    apply(view: EditorView, completion: Completion, from: number, to: number) {
+                    apply(
+                        view: EditorView,
+                        completion: Completion,
+                        from: number,
+                        to: number
+                    ) {
                         if (isLSPTextEdit(textEdit)) {
                             view.dispatch(
                                 insertCompletionText(
                                     view.state,
                                     textEdit.newText,
-                                    posToOffset(view.state.doc, textEdit.range.start),
-                                    posToOffset(view.state.doc, textEdit.range.end),
-                                ),
+                                    posToOffset(
+                                        view.state.doc,
+                                        textEdit.range.start
+                                    ),
+                                    posToOffset(
+                                        view.state.doc,
+                                        textEdit.range.end
+                                    )
+                                )
                             );
                         } else {
-                            view.dispatch(insertCompletionText(view.state, label, from, to));
+                            view.dispatch(
+                                insertCompletionText(
+                                    view.state,
+                                    label,
+                                    from,
+                                    to
+                                )
+                            );
                         }
                         if (!additionalTextEdits) {
                             return;
                         }
                         additionalTextEdits
-                            .sort(({ range: { end: a } }, { range: { end: b } }) => {
-                                if (posToOffset(view.state.doc, a) < posToOffset(view.state.doc, b)) {
-                                    return 1;
-                                } else if (posToOffset(view.state.doc, a) > posToOffset(view.state.doc, b)) {
-                                    return -1;
+                            .sort(
+                                (
+                                    { range: { end: a } },
+                                    { range: { end: b } }
+                                ) => {
+                                    if (
+                                        posToOffset(view.state.doc, a) <
+                                        posToOffset(view.state.doc, b)
+                                    ) {
+                                        return 1;
+                                    } else if (
+                                        posToOffset(view.state.doc, a) >
+                                        posToOffset(view.state.doc, b)
+                                    ) {
+                                        return -1;
+                                    }
+                                    return 0;
                                 }
-                                return 0;
-                            })
+                            )
                             .forEach((textEdit) => {
-                                view.dispatch(view.state.update({
-                                    changes: {
-                                        from: posToOffset(view.state.doc, textEdit.range.start),
-                                        to: posToOffset(view.state.doc, textEdit.range.end),
-                                        insert: textEdit.newText,
-                                    },
-                                }));
+                                view.dispatch(
+                                    view.state.update({
+                                        changes: {
+                                            from: posToOffset(
+                                                view.state.doc,
+                                                textEdit.range.start
+                                            ),
+                                            to: posToOffset(
+                                                view.state.doc,
+                                                textEdit.range.end
+                                            ),
+                                            insert: textEdit.newText,
+                                        },
+                                    })
+                                );
                             });
                     },
                     type: kind && CompletionItemKindMap[kind].toLowerCase(),
@@ -463,7 +523,7 @@ class LanguageServerPlugin implements PluginValue {
                     completion.info = formatContents(documentation);
                 }
                 return completion;
-            },
+            }
         );
 
         return {
@@ -476,7 +536,7 @@ class LanguageServerPlugin implements PluginValue {
     public processNotification(notification: Notification) {
         try {
             switch (notification.method) {
-                case "textDocument/publishDiagnostics":
+                case 'textDocument/publishDiagnostics':
                     this.processDiagnostics(notification.params);
             }
         } catch (error) {
@@ -485,21 +545,29 @@ class LanguageServerPlugin implements PluginValue {
     }
 
     public processDiagnostics(params: PublishDiagnosticsParams) {
-        if (params.uri !== this.documentUri) { return; }
+        if (params.uri !== this.documentUri) {
+            return;
+        }
 
         const diagnostics = params.diagnostics
             .map(({ range, message, severity }) => ({
                 from: posToOffset(this.view.state.doc, range.start)!,
                 to: posToOffset(this.view.state.doc, range.end)!,
                 severity: ({
-                    [DiagnosticSeverity.Error]: "error",
-                    [DiagnosticSeverity.Warning]: "warning",
-                    [DiagnosticSeverity.Information]: "info",
-                    [DiagnosticSeverity.Hint]: "info",
+                    [DiagnosticSeverity.Error]: 'error',
+                    [DiagnosticSeverity.Warning]: 'warning',
+                    [DiagnosticSeverity.Information]: 'info',
+                    [DiagnosticSeverity.Hint]: 'info',
                 } as const)[severity!],
                 message,
             }))
-            .filter(({ from, to }) => from !== null && to !== null && from !== undefined && to !== undefined)
+            .filter(
+                ({ from, to }) =>
+                    from !== null &&
+                    to !== null &&
+                    from !== undefined &&
+                    to !== undefined
+            )
             .sort((a, b) => {
                 switch (true) {
                     case a.from < b.from:
@@ -514,30 +582,9 @@ class LanguageServerPlugin implements PluginValue {
     }
 }
 
-interface LanguageServerBaseOptions {
-    rootUri: string | null;
-    workspaceFolders: LSP.WorkspaceFolder[] | null;
-    documentUri: string;
-    languageId: string;
-}
-
-interface LanguageServerClientOptions<TInitOptions = unknown> extends LanguageServerBaseOptions {
-    transport: Transport;
-    autoClose?: boolean;
-    initializationOptions?: TInitOptions;
-}
-
-interface LanguageServerOptions<TInitOptions = unknown> extends LanguageServerClientOptions<TInitOptions> {
-    client?: LanguageServerClient<TInitOptions>;
-    allowHTMLContent?: boolean;
-}
-
-interface LanguageServerWebsocketOptions<TInitOptions = unknown> extends LanguageServerBaseOptions {
-    serverUri: `ws://${string}` | `wss://${string}`;
-    initializationOptions?: TInitOptions;
-}
-
-export function languageServer<TInitOptions = unknown>(options: LanguageServerWebsocketOptions<TInitOptions>) {
+export function languageServer<TInitOptions = unknown>(
+    options: LanguageServerWebsocketOptions<TInitOptions>
+) {
     const serverUri = options.serverUri;
     const { serverUri: _, ...optionsWithoutServerUri } = options;
     return languageServerWithTransport<TInitOptions>({
@@ -546,25 +593,41 @@ export function languageServer<TInitOptions = unknown>(options: LanguageServerWe
     });
 }
 
-export function languageServerWithTransport<TInitOptions = unknown>(options: LanguageServerOptions<TInitOptions>) {
+export function languageServerWithTransport<TInitOptions = unknown>(
+    options: LanguageServerOptions<TInitOptions>
+) {
     let plugin: LanguageServerPlugin | null = null;
 
     return [
-        client.of(options.client || new LanguageServerClient<TInitOptions>({...options, autoClose: true})),
+        client.of(
+            options.client ||
+                new LanguageServerClient<TInitOptions>({
+                    ...options,
+                    autoClose: true,
+                })
+        ),
         documentUri.of(options.documentUri),
         languageId.of(options.languageId),
-        ViewPlugin.define((view) => (plugin = new LanguageServerPlugin(view, options.allowHTMLContent))),
+        ViewPlugin.define(
+            (view) =>
+                (plugin = new LanguageServerPlugin(
+                    view,
+                    options.allowHTMLContent
+                ))
+        ),
         hoverTooltip(
             (view, pos) =>
                 plugin?.requestHoverTooltip(
                     view,
-                    offsetToPos(view.state.doc, pos),
-                ) ?? null,
+                    offsetToPos(view.state.doc, pos)
+                ) ?? null
         ),
         autocompletion({
             override: [
                 async (context) => {
-                    if (plugin == null) { return null; }
+                    if (plugin == null) {
+                        return null;
+                    }
 
                     const { state, pos, explicit } = context;
                     const line = state.doc.lineAt(pos);
@@ -574,7 +637,7 @@ export function languageServerWithTransport<TInitOptions = unknown>(options: Lan
                     if (
                         !explicit &&
                         plugin.client.capabilities?.completionProvider?.triggerCharacters?.includes(
-                            line.text[pos - line.from - 1],
+                            line.text[pos - line.from - 1]
                         )
                     ) {
                         trigKind = CompletionTriggerKind.TriggerCharacter;
@@ -592,7 +655,7 @@ export function languageServerWithTransport<TInitOptions = unknown>(options: Lan
                         {
                             triggerCharacter: trigChar,
                             triggerKind: trigKind,
-                        },
+                        }
                     );
                 },
             ],
@@ -601,9 +664,13 @@ export function languageServerWithTransport<TInitOptions = unknown>(options: Lan
 }
 
 function posToOffset(doc: Text, pos: { line: number; character: number }) {
-    if (pos.line >= doc.lines) { return; }
+    if (pos.line >= doc.lines) {
+        return;
+    }
     const offset = doc.line(pos.line + 1).from + pos.character;
-    if (offset > doc.length) { return; }
+    if (offset > doc.length) {
+        return;
+    }
     return offset;
 }
 
@@ -616,30 +683,30 @@ function offsetToPos(doc: Text, offset: number) {
 }
 
 function formatContents(
-    contents: LSP.MarkupContent | LSP.MarkedString | LSP.MarkedString[],
+    contents: LSP.MarkupContent | LSP.MarkedString | LSP.MarkedString[]
 ): string {
     if (isLSPMarkupContent(contents)) {
         let value = contents.value;
-        if (contents.kind === "markdown") {
+        if (contents.kind === 'markdown') {
             value = marked.parse(value);
         }
         return value;
     } else if (Array.isArray(contents)) {
-        return contents.map((c) => formatContents(c) + "\n\n").join("");
-    } else if (typeof contents === "string") {
+        return contents.map((c) => formatContents(c) + '\n\n').join('');
+    } else if (typeof contents === 'string') {
         return contents;
     }
 }
 
 function toSet(chars: Set<string>) {
-    let preamble = "";
-    let flat = Array.from(chars).join("");
+    let preamble = '';
+    let flat = Array.from(chars).join('');
     const words = /\w/.test(flat);
     if (words) {
-        preamble += "\\w";
-        flat = flat.replace(/\w/g, "");
+        preamble += '\\w';
+        flat = flat.replace(/\w/g, '');
     }
-    return `[${preamble}${flat.replace(/[^\w\s]/g, "\\$&")}]`;
+    return `[${preamble}${flat.replace(/[^\w\s]/g, '\\$&')}]`;
 }
 
 function prefixMatch(items: LSP.CompletionItem[]) {
@@ -655,303 +722,34 @@ function prefixMatch(items: LSP.CompletionItem[]) {
         }
     }
 
-    const source = toSet(first) + toSet(rest) + "*$";
-    return [new RegExp("^" + source), new RegExp(source)];
+    const source = toSet(first) + toSet(rest) + '*$';
+    return [new RegExp('^' + source), new RegExp(source)];
 }
 
-function isLSPTextEdit(textEdit?: LSP.TextEdit | LSP.InsertReplaceEdit): textEdit is LSP.TextEdit {
+function isLSPTextEdit(
+    textEdit?: LSP.TextEdit | LSP.InsertReplaceEdit
+): textEdit is LSP.TextEdit {
     return (textEdit as LSP.TextEdit)?.range !== undefined;
 }
 
 function isLSPMarkupContent(
-    contents: LSP.MarkupContent | LSP.MarkedString | LSP.MarkedString[],
+    contents: LSP.MarkupContent | LSP.MarkedString | LSP.MarkedString[]
 ): contents is LSP.MarkupContent {
     return (contents as LSP.MarkupContent).kind !== undefined;
 }
 
 // Ready-to-use types for popular LSP servers
 
-/**
- * Initialization options for Pyright language server
- * @see https://github.com/microsoft/pyright/blob/main/docs/settings.md
- */
-export interface PyrightInitializationOptions {
-    python?: {
-        pythonPath?: string;
-        venvPath?: string;
-        analysis?: {
-            autoSearchPaths?: boolean;
-            extraPaths?: string[];
-            diagnosticMode?: "workspace" | "openFilesOnly";
-            stubPath?: string;
-            typeshedPaths?: string[];
-            useLibraryCodeForTypes?: boolean;
-            typeCheckingMode?: "off" | "basic" | "strict";
-            autoImportCompletions?: boolean;
-            indexing?: boolean;
-        };
-    };
-    reportMissingImports?: boolean;
-    reportMissingTypeStubs?: boolean;
-    reportMissingModuleSource?: boolean;
-    reportInvalidTypeVarUse?: boolean;
-    reportOptionalSubscript?: boolean;
-    reportOptionalMemberAccess?: boolean;
-    reportOptionalCall?: boolean;
-    reportOptionalIterable?: boolean;
-    reportOptionalContextManager?: boolean;
-    reportOptionalOperand?: boolean;
-    reportTypedDictNotRequiredAccess?: boolean;
-    reportPrivateImportUsage?: boolean;
-    reportConstantRedefinition?: boolean;
-    reportIncompatibleMethodOverride?: boolean;
-    reportIncompatibleVariableOverride?: boolean;
-    reportInconsistentConstructor?: boolean;
-}
-
-/**
- * Initialization options for Rust Analyzer language server
- * @see https://rust-analyzer.github.io/manual.html#configuration
- */
-export interface RustAnalyzerInitializationOptions {
-    cargo?: {
-        buildScripts?: {
-            enable?: boolean;
-            invocationStrategy?: "per_workspace" | "once";
-            invocationLocation?: "workspace" | "root";
-        };
-        allTargets?: boolean;
-        noDefaultFeatures?: boolean;
-        allFeatures?: boolean;
-        features?: string[];
-        target?: string;
-        runBuildScripts?: boolean;
-        useRustcWrapperForBuildScripts?: boolean;
-    };
-    procMacro?: {
-        enable?: boolean;
-        ignored?: Record<string, string[]>;
-        server?: string;
-        attributes?: {
-            enable?: boolean;
-        };
-    };
-    diagnostics?: {
-        enable?: boolean;
-        disabled?: string[];
-        warningsAsHint?: string[];
-        warningsAsInfo?: string[];
-        remapPrefix?: Record<string, string>;
-        experimental?: {
-            enable?: boolean;
-        };
-    };
-    completion?: {
-        addCallArgumentSnippets?: boolean;
-        addCallParenthesis?: boolean;
-        postfix?: {
-            enable?: boolean;
-        };
-        autoimport?: {
-            enable?: boolean;
-        };
-        privateEditable?: {
-            enable?: boolean;
-        };
-    };
-    assist?: {
-        importGranularity?: "preserve" | "crate" | "module" | "item";
-        importEnforceGranularity?: boolean;
-        importPrefix?: "plain" | "by_self" | "by_crate";
-        allowMergingIntoGlobImports?: boolean;
-    };
-    callInfo?: {
-        full?: boolean;
-    };
-    lens?: {
-        enable?: boolean;
-        run?: boolean;
-        debug?: boolean;
-        implementations?: boolean;
-        refs?: boolean;
-        methodReferences?: boolean;
-        references?: boolean;
-        enumVariantReferences?: boolean;
-    };
-    hover?: {
-        documentation?: boolean;
-        keywords?: boolean;
-        linksInHover?: boolean;
-        memoryLayout?: {
-            enable?: boolean;
-        };
-    };
-    workspace?: {
-        symbol?: {
-            search?: {
-                scope?: "workspace" | "workspace_and_dependencies";
-                kind?: "only_types" | "all_symbols";
-            };
-        };
-    };
-}
-
-/**
- * Initialization options for TypeScript/JavaScript language server
- * @see https://github.com/typescript-language-server/typescript-language-server
- */
-export interface TypeScriptInitializationOptions {
-    hostInfo?: string;
-    npmLocation?: string;
-    globalPlugins?: string[];
-    pluginProbeLocations?: string[];
-    preferences?: {
-        includePackageJsonAutoImports?: "auto" | "on" | "off";
-        providePrefixAndSuffixTextForRename?: boolean;
-        allowRenameOfImportPath?: boolean;
-        includeAutomaticOptionalChainCompletions?: boolean;
-        includeCompletionsForModuleExports?: boolean;
-        includeCompletionsForImportStatements?: boolean;
-        includeCompletionsWithSnippetText?: boolean;
-        includeCompletionsWithInsertText?: boolean;
-        allowIncompleteCompletions?: boolean;
-        importModuleSpecifier?: "shortest" | "relative" | "absolute" | "auto";
-        importModuleSpecifierEnding?: "minimal" | "index" | "js";
-        allowTextChangesInNewFiles?: boolean;
-        lazyConfiguredProjectsFromExternalProject?: boolean;
-        providePrefixAndSuffixTextForQuickInfo?: boolean;
-        includeInlayParameterNameHints?: "none" | "literals" | "all";
-        includeInlayParameterNameHintsWhenArgumentMatchesName?: boolean;
-        includeInlayFunctionParameterTypeHints?: boolean;
-        includeInlayVariableTypeHints?: boolean;
-        includeInlayVariableTypeHintsWhenTypeMatchesName?: boolean;
-        includeInlayPropertyDeclarationTypeHints?: boolean;
-        includeInlayFunctionLikeReturnTypeHints?: boolean;
-        includeInlayEnumMemberValueHints?: boolean;
-    };
-    locale?: string;
-    maxTsServerMemory?: number;
-    tsserver?: {
-        logLevel?: "off" | "terse" | "normal" | "requestTime" | "verbose";
-        logVerbosity?: "off" | "terse" | "normal" | "requestTime" | "verbose";
-        trace?: "off" | "messages" | "verbose";
-        useSeparateSyntaxServer?: boolean;
-        enableTracing?: boolean;
-        path?: string;
-    };
-}
-
-/**
- * Initialization options for ESLint language server
- * @see https://github.com/Microsoft/vscode-eslint
- */
-export interface ESLintInitializationOptions {
-    packageManager?: "npm" | "yarn" | "pnpm";
-    nodePath?: string;
-    options?: Record<string, any>;
-    rules?: Record<string, any>;
-    rulesCustomizations?: Array<{
-        rule: string;
-        severity: "downgrade" | "upgrade" | "info" | "warn" | "error" | "off";
-    }>;
-    run?: "onType" | "onSave";
-    problems?: {
-        shortenToSingleLine?: boolean;
-    };
-    codeAction?: {
-        disableRuleComment?: {
-            enable?: boolean;
-            location?: "separateLine" | "sameLine";
-        };
-        showDocumentation?: {
-            enable?: boolean;
-        };
-    };
-    codeActionOnSave?: {
-        enable?: boolean;
-        mode?: "all" | "problems";
-    };
-    format?: {
-        enable?: boolean;
-    };
-    quiet?: boolean;
-    onIgnoredFiles?: "off" | "warn";
-    useESLintClass?: boolean;
-    experimental?: {
-        useFlatConfig?: boolean;
-    };
-    workingDirectory?: {
-        mode?: "auto" | "location";
-    };
-}
-
-/**
- * Initialization options for Clangd language server
- * @see https://clangd.llvm.org/config
- */
-export interface ClangdInitializationOptions {
-    compilationDatabasePath?: string;
-    compilationDatabaseChanges?: Record<string, any>;
-    fallbackFlags?: string[];
-    clangdFileStatus?: boolean;
-    utf8?: boolean;
-    offsetEncoding?: ("utf-8" | "utf-16" | "utf-32")[];
-    index?: {
-        background?: "Build" | "Skip";
-        threads?: number;
-    };
-    completion?: {
-        detailedLabel?: boolean;
-        allScopes?: boolean;
-    };
-    hover?: {
-        showAKA?: boolean;
-    };
-    inlayHints?: {
-        enabled?: boolean;
-        parameterNames?: boolean;
-        deducedTypes?: boolean;
-        designators?: boolean;
-    };
-    semanticHighlighting?: boolean;
-    diagnostics?: {
-        unusedIncludes?: "None" | "Strict";
-        missingIncludes?: "None" | "Strict";
-        clangTidy?: boolean;
-        suppressAll?: boolean;
-    };
-}
-
-/**
- * Initialization options for Gopls (Go language server)
- * @see https://github.com/golang/tools/blob/master/gopls/doc/settings.md
- */
-export interface GoplsInitializationOptions {
-    buildFlags?: string[];
-    env?: Record<string, string>;
-    directoryFilters?: string[];
-    templateExtensions?: string[];
-    memoryMode?: "DegradeClosed" | "Normal";
-    gofumpt?: boolean;
-    staticcheck?: boolean;
-    analyses?: Record<string, boolean>;
-    codelenses?: Record<string, boolean>;
-    usePlaceholders?: boolean;
-    completionBudget?: string;
-    diagnosticsDelay?: string;
-    experimentalPostfixCompletions?: boolean;
-    experimentalWorkspaceModule?: boolean;
-    experimentalTemplateSupport?: boolean;
-    semanticTokens?: boolean;
-    noSemanticString?: boolean;
-    noSemanticNumber?: boolean;
-    expandWorkspaceToModule?: boolean;
-    experimentalUseInvalidMetadata?: boolean;
-    hoverKind?: "FullDocumentation" | "NoDocumentation" | "SingleLine" | "Structured" | "SynopsisDocumentation";
-    linkTarget?: string;
-    linksInHover?: boolean;
-    importShortcut?: "Both" | "Definition" | "Link";
-    symbolMatcher?: "CaseInsensitive" | "CaseSensitive" | "FastFuzzy" | "Fuzzy";
-    symbolStyle?: "Dynamic" | "Full" | "Package";
-    verboseOutput?: boolean;
-}
+// Export types from index.d.ts for backward compatibility
+export type {
+    PyrightInitializationOptions,
+    RustAnalyzerInitializationOptions,
+    TypeScriptInitializationOptions,
+    ESLintInitializationOptions,
+    ClangdInitializationOptions,
+    GoplsInitializationOptions,
+    LanguageServerBaseOptions,
+    LanguageServerClientOptions,
+    LanguageServerOptions,
+    LanguageServerWebsocketOptions,
+};
