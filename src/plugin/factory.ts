@@ -1,0 +1,96 @@
+import { ViewPlugin } from '@codemirror/view';
+import { hoverTooltip } from '@codemirror/view';
+import { autocompletion } from '@codemirror/autocomplete';
+import { linter } from '@codemirror/lint';
+import { LanguageServerClient } from '../client/LanguageServerClient';
+import { LanguageServerPlugin, LanguageServerPluginOptions } from './LanguageServerPlugin';
+import { WebSocketTransport } from '@open-rpc/client-js';
+import { LanguageServerOptions, LanguageServerWebsocketOptions } from '../types/lsp';
+import { client, documentUri, languageId } from './facets';
+import { offsetToPos } from '../utils/position';
+import * as LSP from 'vscode-languageserver-protocol';
+
+export function languageServer<TInitOptions = unknown>(
+    options: LanguageServerWebsocketOptions<TInitOptions>
+) {
+    const serverUri = options.serverUri;
+    const { serverUri: _, ...optionsWithoutServerUri } = options;
+    const transport = new WebSocketTransport(serverUri);
+    
+    return languageServerWithTransport<TInitOptions>({
+        ...optionsWithoutServerUri,
+        transport,
+    });
+}
+
+export function languageServerWithTransport<TInitOptions = unknown>(
+    options: LanguageServerOptions<TInitOptions>
+) {
+    let plugin: LanguageServerPlugin | null = null;
+
+    const pluginOptions: LanguageServerPluginOptions = {
+        allowHTMLContent: options.allowHTMLContent,
+    };
+
+    return [
+        client.of(
+            options.client ||
+                new LanguageServerClient<TInitOptions>({
+                    ...options,
+                    autoClose: true,
+                })
+        ),
+        documentUri.of(options.documentUri),
+        languageId.of(options.languageId),
+        ViewPlugin.define(
+            (view) =>
+                (plugin = new LanguageServerPlugin(view, pluginOptions))
+        ),
+        hoverTooltip(
+            (view, pos) =>
+                plugin?.requestHoverTooltip(
+                    view,
+                    offsetToPos(view.state.doc, pos)
+                ) ?? null
+        ),
+        autocompletion({
+            override: [
+                async (context) => {
+                    if (plugin == null) {
+                        return null;
+                    }
+
+                    const { state, pos, explicit } = context;
+                    const line = state.doc.lineAt(pos);
+                    let trigKind: LSP.CompletionTriggerKind =
+                        LSP.CompletionTriggerKind.Invoked;
+                    let trigChar: string | undefined;
+                    if (
+                        !explicit &&
+                        plugin.client.capabilities?.completionProvider?.triggerCharacters?.includes(
+                            line.text[pos - line.from - 1]
+                        )
+                    ) {
+                        trigKind = LSP.CompletionTriggerKind.TriggerCharacter;
+                        trigChar = line.text[pos - line.from - 1];
+                    }
+                    if (
+                        trigKind === LSP.CompletionTriggerKind.Invoked &&
+                        !context.matchBefore(/\w+$/)
+                    ) {
+                        return null;
+                    }
+                    return await plugin.requestCompletion(
+                        context,
+                        offsetToPos(state.doc, pos),
+                        {
+                            triggerCharacter: trigChar,
+                            triggerKind: trigKind,
+                        }
+                    );
+                },
+            ],
+        }),
+        linter(() => []), // Diagnostics are handled via notifications
+    ];
+}

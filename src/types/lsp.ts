@@ -49,11 +49,6 @@ export interface LanguageServerOptions<TInitOptions = unknown>
     allowHTMLContent?: boolean;
 }
 
-// Forward declaration to avoid circular dependency
-export declare class LanguageServerClient<TInitOptions = unknown> {
-    // Class implementation in index.ts
-}
-
 export interface LanguageServerWebsocketOptions<TInitOptions = unknown>
     extends LanguageServerBaseOptions {
     serverUri: `ws://${string}` | `wss://${string}`;
