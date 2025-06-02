@@ -1,6 +1,6 @@
 import { autocompletion } from '@codemirror/autocomplete';
 import { linter } from '@codemirror/lint';
-import { hoverTooltip, ViewPlugin } from '@codemirror/view';
+import { hoverTooltip, ViewPlugin, EditorView } from '@codemirror/view';
 import { WebSocketTransport } from '@open-rpc/client-js';
 import * as LSP from 'vscode-languageserver-protocol';
 import { LanguageServerClient } from '../client/LanguageServerClient';
@@ -15,22 +15,30 @@ import {
     LanguageServerPluginOptions,
 } from './LanguageServerPlugin';
 
-export function languageServer<TInitOptions = unknown>(
+export async function languageServer<TInitOptions = unknown>(
     options: LanguageServerWebsocketOptions<TInitOptions>,
 ) {
     const serverUri = options.serverUri;
     const { serverUri: _, ...optionsWithoutServerUri } = options;
     const transport = new WebSocketTransport(serverUri);
 
-    return languageServerWithTransport<TInitOptions>({
+    return await languageServerWithTransport<TInitOptions>({
         ...optionsWithoutServerUri,
         transport,
     });
 }
 
-export function languageServerWithTransport<TInitOptions = unknown>(
+export async function languageServerWithTransport<TInitOptions = unknown>(
     options: LanguageServerOptions<TInitOptions>,
 ) {
+    const lspClient = options.client || 
+        new LanguageServerClient<TInitOptions>({
+            ...options,
+            autoClose: true,
+        });
+
+    await lspClient.initializePromise;
+
     let plugin: LanguageServerPlugin | null = null;
 
     const pluginOptions: LanguageServerPluginOptions = {
@@ -38,13 +46,7 @@ export function languageServerWithTransport<TInitOptions = unknown>(
     };
 
     return [
-        client.of(
-            options.client ||
-                new LanguageServerClient<TInitOptions>({
-                    ...options,
-                    autoClose: true,
-                }),
-        ),
+        client.of(lspClient),
         documentUri.of(options.documentUri),
         languageId.of(options.languageId),
         ViewPlugin.define(
@@ -95,6 +97,14 @@ export function languageServerWithTransport<TInitOptions = unknown>(
                 },
             ],
         }),
-        linter(() => []), // Diagnostics are handled via notifications
+        linter(() => []),
     ];
+}
+
+export function getLanguageServerClient(view: EditorView): LanguageServerClient | null {
+    try {
+        return view.state.facet(client);
+    } catch {
+        return null;
+    }
 }

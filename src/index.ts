@@ -15,7 +15,11 @@ export type {
     HoverProvider,
 } from './features';
 export { client, documentUri, languageId } from './plugin/facets';
-export { languageServer, languageServerWithTransport } from './plugin/factory';
+export { 
+    languageServer, 
+    languageServerWithTransport,
+    getLanguageServerClient,
+} from './plugin/factory';
 // Export plugin components for advanced usage
 export { LanguageServerPlugin } from './plugin/LanguageServerPlugin';
 export type { LanguageServerPluginOptions } from './plugin/LanguageServerPlugin';
