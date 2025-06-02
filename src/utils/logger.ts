@@ -1,4 +1,4 @@
-import * as log from 'loglevel';
+import log from 'loglevel';
 
 // Available log levels
 export type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'SILENT';
@@ -59,10 +59,10 @@ export function createLogger(moduleName: ModuleName): Logger {
             log.error(...addPrefix('ERROR', message, ...optionalParams));
         },
         setLevel: (level: LogLevel) => {
-            log.setLevel(level);
+            log.setLevel(level as log.LogLevelDesc);
         },
         getLevel: (): LogLevel => {
-            return log.getLevel() as unknown as LogLevel;
+            return log.getLevel() as any as LogLevel;
         },
     };
 }
@@ -72,13 +72,24 @@ export const logger = createLogger('UTILS');
 
 // Set default log level
 export function setLogLevel(level: LogLevel): void {
-    log.setLevel(level);
-    logger.info(`Log level set to: ${level}`);
+    try {
+        log.setLevel(level as log.LogLevelDesc);
+        // Save to localStorage if available
+        if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(
+                'codemirror-languageserver-log-level',
+                level,
+            );
+        }
+        logger.info(`Log level set to: ${level}`);
+    } catch (error) {
+        console.warn('[CM-LS] Failed to set log level:', error);
+    }
 }
 
 // Get current log level
 export function getLogLevel(): LogLevel {
-    return log.getLevel() as unknown as LogLevel;
+    return log.getLevel() as any as LogLevel;
 }
 
 // Enable/disable all logging
@@ -91,18 +102,46 @@ export function disableAll(): void {
     log.disableAll();
 }
 
-// Initialize with INFO level by default (can be overridden)
-if (typeof window !== 'undefined' && window.localStorage) {
-    const savedLevel = window.localStorage.getItem(
-        'codemirror-languageserver-log-level',
-    );
-    if (savedLevel && Object.keys(log.levels).includes(savedLevel)) {
-        setLogLevel(savedLevel as LogLevel);
-    } else {
-        setLogLevel('WARN'); // Default to WARN in production
+// Initialize with default log level (can be overridden)
+function initializeLogging(): void {
+    try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+            const savedLevel = window.localStorage.getItem(
+                'codemirror-languageserver-log-level',
+            );
+            if (
+                savedLevel &&
+                ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'SILENT'].includes(
+                    savedLevel,
+                )
+            ) {
+                setLogLevel(savedLevel as LogLevel);
+            } else {
+                setLogLevel('WARN'); // Default to WARN in production
+            }
+        } else {
+            setLogLevel('WARN'); // Default to WARN in production
+        }
+    } catch (error) {
+        // Fallback initialization
+        try {
+            log.setLevel('WARN' as log.LogLevelDesc);
+        } catch {
+            // Silent fallback if even basic setLevel fails
+        }
     }
+}
+
+// Only initialize if we're in a browser environment
+if (typeof window !== 'undefined') {
+    initializeLogging();
 } else {
-    setLogLevel('WARN'); // Default to WARN in production
+    // Node.js environment
+    try {
+        log.setLevel('WARN' as log.LogLevelDesc);
+    } catch {
+        // Silent fallback
+    }
 }
 
 // Helper function to log method calls with timing
