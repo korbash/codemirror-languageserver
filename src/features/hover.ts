@@ -1,8 +1,8 @@
-import * as LSP from 'vscode-languageserver-protocol';
 import { EditorView } from '@codemirror/view';
+import * as LSP from 'vscode-languageserver-protocol';
 import { LanguageServerClient } from '../client/LanguageServerClient';
-import { formatContents } from '../utils/content';
 import { documentUri } from '../plugin/facets';
+import { formatContents } from '../utils/content';
 
 export interface HoverProvider {
     isSupported(capabilities: LSP.ServerCapabilities): boolean;
@@ -10,7 +10,12 @@ export interface HoverProvider {
         client: LanguageServerClient,
         view: EditorView,
         position: LSP.Position
-    ): Promise<{ pos: number; end?: number; above?: boolean; create: () => { dom: HTMLElement } } | null>;
+    ): Promise<{
+        pos: number;
+        end?: number;
+        above?: boolean;
+        create: () => { dom: HTMLElement };
+    } | null>;
 }
 
 export class DefaultHoverProvider implements HoverProvider {
@@ -24,7 +29,12 @@ export class DefaultHoverProvider implements HoverProvider {
         client: LanguageServerClient,
         view: EditorView,
         position: LSP.Position
-    ): Promise<{ pos: number; end?: number; above?: boolean; create: () => { dom: HTMLElement } } | null> {
+    ): Promise<{
+        pos: number;
+        end?: number;
+        above?: boolean;
+        create: () => { dom: HTMLElement };
+    } | null> {
         if (!this.isSupported(client.capabilities)) {
             return null;
         }
@@ -52,13 +62,16 @@ export class DefaultHoverProvider implements HoverProvider {
                 create: () => {
                     const dom = document.createElement('div');
                     dom.className = 'cm-tooltip-hover';
-                    
-                    if (this.allowHTMLContent && formatted.dom instanceof Element) {
+
+                    if (
+                        this.allowHTMLContent &&
+                        formatted.dom instanceof Element
+                    ) {
                         dom.appendChild(formatted.dom);
                     } else {
                         dom.textContent = formatted.dom.textContent || '';
                     }
-                    
+
                     return { dom };
                 },
             };

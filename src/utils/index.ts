@@ -1,2 +1,8 @@
-export { posToOffset, offsetToPos } from './position';
-export { formatContents, toSet, prefixMatch, isLSPTextEdit, isLSPMarkupContent } from './content';
+export {
+    formatContents,
+    isLSPMarkupContent,
+    isLSPTextEdit,
+    prefixMatch,
+    toSet,
+} from './content';
+export { offsetToPos, posToOffset } from './position';

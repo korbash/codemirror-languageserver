@@ -1,9 +1,16 @@
-import * as LSP from 'vscode-languageserver-protocol';
-import { EditorView, PluginValue, ViewUpdate } from '@codemirror/view';
 import { CompletionContext } from '@codemirror/autocomplete';
 import { setDiagnostics } from '@codemirror/lint';
+import { EditorView, PluginValue, ViewUpdate } from '@codemirror/view';
+import * as LSP from 'vscode-languageserver-protocol';
 import { LanguageServerClient } from '../client/LanguageServerClient';
-import { HoverProvider, CompletionProvider, DiagnosticsProvider, DefaultHoverProvider, DefaultCompletionProvider, DefaultDiagnosticsProvider } from '../features';
+import {
+    CompletionProvider,
+    DefaultCompletionProvider,
+    DefaultDiagnosticsProvider,
+    DefaultHoverProvider,
+    DiagnosticsProvider,
+    HoverProvider,
+} from '../features';
 import { Notification } from '../types/lsp';
 import { client, documentUri, languageId } from './facets';
 
@@ -39,9 +46,13 @@ export class LanguageServerPlugin implements PluginValue {
         this.changesTimeout = 0;
 
         // Initialize feature providers
-        this.hoverProvider = options.hoverProvider || new DefaultHoverProvider(options.allowHTMLContent);
-        this.completionProvider = options.completionProvider || new DefaultCompletionProvider();
-        this.diagnosticsProvider = options.diagnosticsProvider || new DefaultDiagnosticsProvider();
+        this.hoverProvider =
+            options.hoverProvider ||
+            new DefaultHoverProvider(options.allowHTMLContent);
+        this.completionProvider =
+            options.completionProvider || new DefaultCompletionProvider();
+        this.diagnosticsProvider =
+            options.diagnosticsProvider || new DefaultDiagnosticsProvider();
 
         this.client.attachPlugin(this);
 
@@ -71,7 +82,7 @@ export class LanguageServerPlugin implements PluginValue {
 
     public async initialize(options: { documentText: string }) {
         await this.client.initializePromise;
-        
+
         this.client.textDocumentDidOpen({
             textDocument: {
                 uri: this.documentUri,
@@ -114,7 +125,10 @@ export class LanguageServerPlugin implements PluginValue {
     public async requestCompletion(
         context: CompletionContext,
         pos: LSP.Position,
-        trigger: { triggerKind: LSP.CompletionTriggerKind; triggerCharacter?: string }
+        trigger: {
+            triggerKind: LSP.CompletionTriggerKind;
+            triggerCharacter?: string;
+        }
     ) {
         await this.client.initializePromise;
 
@@ -122,10 +136,15 @@ export class LanguageServerPlugin implements PluginValue {
             return null;
         }
 
-        return this.completionProvider.provideCompletion(this.client, context, pos, {
-            triggerKind: trigger.triggerKind,
-            triggerCharacter: trigger.triggerCharacter
-        });
+        return this.completionProvider.provideCompletion(
+            this.client,
+            context,
+            pos,
+            {
+                triggerKind: trigger.triggerKind,
+                triggerCharacter: trigger.triggerCharacter,
+            }
+        );
     }
 
     public processNotification(notification: Notification) {
@@ -141,7 +160,10 @@ export class LanguageServerPlugin implements PluginValue {
             return;
         }
 
-        const diagnostics = this.diagnosticsProvider.processDiagnostics(this.view, params);
+        const diagnostics = this.diagnosticsProvider.processDiagnostics(
+            this.view,
+            params
+        );
         this.view.dispatch(setDiagnostics(this.view.state, diagnostics));
     }
 }

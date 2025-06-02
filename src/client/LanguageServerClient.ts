@@ -1,11 +1,11 @@
 import * as LSP from 'vscode-languageserver-protocol';
 import { RequestManager, Client } from '@open-rpc/client-js';
 import { Transport } from '@open-rpc/client-js/build/transports/Transport';
-import { 
-    LSPRequestMap, 
-    LSPNotifyMap, 
-    Notification, 
-    LanguageServerClientOptions 
+import {
+    LSPRequestMap,
+    LSPNotifyMap,
+    Notification,
+    LanguageServerClientOptions,
 } from '../types/lsp';
 
 const timeout = 10000;
@@ -105,7 +105,11 @@ export class LanguageServerClient<TInitOptions = unknown> {
                             },
                             insertReplaceSupport: false,
                             resolveSupport: {
-                                properties: ['documentation', 'detail', 'additionalTextEdits'],
+                                properties: [
+                                    'documentation',
+                                    'detail',
+                                    'additionalTextEdits',
+                                ],
                             },
                             insertTextModeSupport: {
                                 valueSet: [1, 2],
@@ -113,7 +117,30 @@ export class LanguageServerClient<TInitOptions = unknown> {
                         },
                         completionItemKind: {
                             valueSet: [
-                                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+                                1,
+                                2,
+                                3,
+                                4,
+                                5,
+                                6,
+                                7,
+                                8,
+                                9,
+                                10,
+                                11,
+                                12,
+                                13,
+                                14,
+                                15,
+                                16,
+                                17,
+                                18,
+                                19,
+                                20,
+                                21,
+                                22,
+                                23,
+                                24,
                                 25,
                             ],
                         },
@@ -141,8 +168,32 @@ export class LanguageServerClient<TInitOptions = unknown> {
                         dynamicRegistration: false,
                         symbolKind: {
                             valueSet: [
-                                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-                                25, 26,
+                                1,
+                                2,
+                                3,
+                                4,
+                                5,
+                                6,
+                                7,
+                                8,
+                                9,
+                                10,
+                                11,
+                                12,
+                                13,
+                                14,
+                                15,
+                                16,
+                                17,
+                                18,
+                                19,
+                                20,
+                                21,
+                                22,
+                                23,
+                                24,
+                                25,
+                                26,
                             ],
                         },
                     },
@@ -160,7 +211,11 @@ export class LanguageServerClient<TInitOptions = unknown> {
 
     public async initialize(): Promise<void> {
         const params = this.getInitializationOptions();
-        const initializeResult = await this.request('initialize', params, timeout);
+        const initializeResult = await this.request(
+            'initialize',
+            params,
+            timeout
+        );
         this.capabilities = initializeResult.capabilities;
         this.ready = true;
         await this.notify('initialized', {});

@@ -1,1 +1,6 @@
-export type { Transport, TransportOptions, WebSocketTransportOptions, FetchTransportOptions } from '../types/transport';
+export type {
+    Transport,
+    TransportOptions,
+    WebSocketTransportOptions,
+    FetchTransportOptions,
+} from '../types/transport';

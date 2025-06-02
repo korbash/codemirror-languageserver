@@ -1,7 +1,6 @@
-import * as LSP from 'vscode-languageserver-protocol';
-import { EditorView } from '@codemirror/view';
 import { Diagnostic } from '@codemirror/lint';
-import { LanguageServerClient } from '../client/LanguageServerClient';
+import { EditorView } from '@codemirror/view';
+import * as LSP from 'vscode-languageserver-protocol';
 import { posToOffset } from '../utils/position';
 
 export interface DiagnosticsProvider {
@@ -40,14 +39,20 @@ export class DefaultDiagnosticsProvider implements DiagnosticsProvider {
                     });
                 }
             } catch (error) {
-                console.warn('Failed to process diagnostic:', diagnostic, error);
+                console.warn(
+                    'Failed to process diagnostic:',
+                    diagnostic,
+                    error
+                );
             }
         }
 
         return diagnostics;
     }
 
-    private mapSeverity(severity?: LSP.DiagnosticSeverity): 'error' | 'warning' | 'info' | 'hint' {
+    private mapSeverity(
+        severity?: LSP.DiagnosticSeverity
+    ): 'error' | 'warning' | 'info' | 'hint' {
         switch (severity) {
             case LSP.DiagnosticSeverity.Error:
                 return 'error';
@@ -65,17 +70,19 @@ export class DefaultDiagnosticsProvider implements DiagnosticsProvider {
     // Code actions are handled separately through textDocument/codeAction requests
     // This method is kept for future implementation
     private convertCodeActions(codeActions: LSP.CodeAction[]): any[] {
-        return codeActions.map(action => ({
+        return codeActions.map((action) => ({
             name: action.title,
             apply: (view: EditorView) => {
                 // Code action application would be implemented here
                 // For now, just log the action
                 console.log('Code action triggered:', action.title);
-            }
+            },
         }));
     }
 }
 
-export function createDiagnosticsProvider(options: { allowCodeActions?: boolean } = {}): DiagnosticsProvider {
+export function createDiagnosticsProvider(
+    options: { allowCodeActions?: boolean } = {}
+): DiagnosticsProvider {
     return new DefaultDiagnosticsProvider();
 }

@@ -1,5 +1,5 @@
-import * as LSP from 'vscode-languageserver-protocol';
 import { Transport } from '@open-rpc/client-js/build/transports/Transport';
+import * as LSP from 'vscode-languageserver-protocol';
 
 export interface LSPRequestMap {
     initialize: [LSP.InitializeParams, LSP.InitializeResult];

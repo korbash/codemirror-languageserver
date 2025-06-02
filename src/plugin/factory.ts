@@ -1,14 +1,19 @@
-import { ViewPlugin } from '@codemirror/view';
-import { hoverTooltip } from '@codemirror/view';
 import { autocompletion } from '@codemirror/autocomplete';
 import { linter } from '@codemirror/lint';
-import { LanguageServerClient } from '../client/LanguageServerClient';
-import { LanguageServerPlugin, LanguageServerPluginOptions } from './LanguageServerPlugin';
+import { hoverTooltip, ViewPlugin } from '@codemirror/view';
 import { WebSocketTransport } from '@open-rpc/client-js';
-import { LanguageServerOptions, LanguageServerWebsocketOptions } from '../types/lsp';
-import { client, documentUri, languageId } from './facets';
-import { offsetToPos } from '../utils/position';
 import * as LSP from 'vscode-languageserver-protocol';
+import { LanguageServerClient } from '../client/LanguageServerClient';
+import {
+    LanguageServerOptions,
+    LanguageServerWebsocketOptions,
+} from '../types/lsp';
+import { offsetToPos } from '../utils/position';
+import { client, documentUri, languageId } from './facets';
+import {
+    LanguageServerPlugin,
+    LanguageServerPluginOptions,
+} from './LanguageServerPlugin';
 
 export function languageServer<TInitOptions = unknown>(
     options: LanguageServerWebsocketOptions<TInitOptions>
@@ -16,7 +21,7 @@ export function languageServer<TInitOptions = unknown>(
     const serverUri = options.serverUri;
     const { serverUri: _, ...optionsWithoutServerUri } = options;
     const transport = new WebSocketTransport(serverUri);
-    
+
     return languageServerWithTransport<TInitOptions>({
         ...optionsWithoutServerUri,
         transport,
@@ -43,8 +48,7 @@ export function languageServerWithTransport<TInitOptions = unknown>(
         documentUri.of(options.documentUri),
         languageId.of(options.languageId),
         ViewPlugin.define(
-            (view) =>
-                (plugin = new LanguageServerPlugin(view, pluginOptions))
+            (view) => (plugin = new LanguageServerPlugin(view, pluginOptions))
         ),
         hoverTooltip(
             (view, pos) =>

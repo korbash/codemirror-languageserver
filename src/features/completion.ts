@@ -1,8 +1,7 @@
-import * as LSP from 'vscode-languageserver-protocol';
-import { EditorView } from '@codemirror/view';
 import { CompletionContext, CompletionResult } from '@codemirror/autocomplete';
+import { EditorView } from '@codemirror/view';
+import * as LSP from 'vscode-languageserver-protocol';
 import { LanguageServerClient } from '../client/LanguageServerClient';
-import { offsetToPos } from '../utils/position';
 import { documentUri } from '../plugin/facets';
 
 export interface CompletionProvider {
@@ -11,7 +10,10 @@ export interface CompletionProvider {
         client: LanguageServerClient,
         context: CompletionContext,
         position: LSP.Position,
-        trigger: { triggerKind: LSP.CompletionTriggerKind; triggerCharacter?: string }
+        trigger: {
+            triggerKind: LSP.CompletionTriggerKind;
+            triggerCharacter?: string;
+        }
     ): Promise<CompletionResult | null>;
 }
 
@@ -24,7 +26,10 @@ export class DefaultCompletionProvider implements CompletionProvider {
         client: LanguageServerClient,
         context: CompletionContext,
         position: LSP.Position,
-        trigger: { triggerKind: LSP.CompletionTriggerKind; triggerCharacter?: string }
+        trigger: {
+            triggerKind: LSP.CompletionTriggerKind;
+            triggerCharacter?: string;
+        }
     ): Promise<CompletionResult | null> {
         if (!this.isSupported(client.capabilities)) {
             return null;
@@ -53,7 +58,9 @@ export class DefaultCompletionProvider implements CompletionProvider {
 
             return {
                 from: this.getCompletionStart(context),
-                options: items.map((item) => this.convertCompletionItem(item, context)),
+                options: items.map((item) =>
+                    this.convertCompletionItem(item, context)
+                ),
             };
         } catch (error) {
             console.error('Completion request failed:', error);
@@ -66,23 +73,43 @@ export class DefaultCompletionProvider implements CompletionProvider {
         return word ? word.from : context.pos;
     }
 
-    private convertCompletionItem(item: LSP.CompletionItem, context: CompletionContext): any {
+    private convertCompletionItem(
+        item: LSP.CompletionItem,
+        context: CompletionContext
+    ): any {
         const completion: any = {
             label: item.label,
             detail: item.detail,
-            info: item.documentation ? this.formatDocumentation(item.documentation) : undefined,
+            info: item.documentation
+                ? this.formatDocumentation(item.documentation)
+                : undefined,
             type: this.mapCompletionItemKind(item.kind),
         };
 
         if (item.textEdit) {
             if (this.isLSPTextEdit(item.textEdit)) {
-                completion.apply = (view: EditorView, completion: any, from: number, to: number) => {
+                completion.apply = (
+                    view: EditorView,
+                    completion: any,
+                    from: number,
+                    to: number
+                ) => {
                     const edit = item.textEdit as LSP.TextEdit;
-                    const editFrom = this.positionToOffset(view.state.doc, edit.range.start);
-                    const editTo = this.positionToOffset(view.state.doc, edit.range.end);
-                    
+                    const editFrom = this.positionToOffset(
+                        view.state.doc,
+                        edit.range.start
+                    );
+                    const editTo = this.positionToOffset(
+                        view.state.doc,
+                        edit.range.end
+                    );
+
                     view.dispatch({
-                        changes: { from: editFrom, to: editTo, insert: edit.newText },
+                        changes: {
+                            from: editFrom,
+                            to: editTo,
+                            insert: edit.newText,
+                        },
                     });
                 };
             }

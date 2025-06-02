@@ -14,7 +14,7 @@ export class WebSocketTransport implements Transport {
             timeout: 30000,
             reconnectAttempts: 3,
             reconnectDelay: 1000,
-            ...options
+            ...options,
         };
     }
 
@@ -22,7 +22,7 @@ export class WebSocketTransport implements Transport {
         return new Promise((resolve, reject) => {
             try {
                 this.ws = new WebSocket(this.url, this.options.protocols);
-                
+
                 const timeout = setTimeout(() => {
                     if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
                         this.ws.close();
@@ -58,7 +58,6 @@ export class WebSocketTransport implements Transport {
                     }
                     reject(error);
                 };
-
             } catch (error) {
                 reject(error);
             }
@@ -90,7 +89,7 @@ export class WebSocketTransport implements Transport {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
-        
+
         if (this.ws) {
             this.ws.close();
             this.ws = null;

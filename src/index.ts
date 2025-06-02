@@ -1,60 +1,54 @@
 // Main exports for backward compatibility
-export { languageServer, languageServerWithTransport } from './plugin/factory';
+// Export transports
+export { WebSocketTransport } from '@open-rpc/client-js';
 export { LanguageServerClient } from './client/LanguageServerClient';
-
+export {
+    createDiagnosticsProvider,
+    DefaultCompletionProvider,
+    DefaultDiagnosticsProvider,
+    DefaultHoverProvider,
+} from './features';
+// Export feature providers for extensibility
+export type {
+    CompletionProvider,
+    DiagnosticsProvider,
+    HoverProvider,
+} from './features';
+export { client, documentUri, languageId } from './plugin/facets';
+export { languageServer, languageServerWithTransport } from './plugin/factory';
+// Export plugin components for advanced usage
+export { LanguageServerPlugin } from './plugin/LanguageServerPlugin';
+export type { LanguageServerPluginOptions } from './plugin/LanguageServerPlugin';
 // Export types for TypeScript users
 export type {
-    LSPRequestMap,
-    LSPNotifyMap,
-    LSPEventMap,
-    Notification,
+    ClangdInitializationOptions,
+    ESLintInitializationOptions,
+    GoplsInitializationOptions,
     LanguageServerBaseOptions,
     LanguageServerClientOptions,
     LanguageServerOptions,
     LanguageServerWebsocketOptions,
+    LSPEventMap,
+    LSPNotifyMap,
+    LSPRequestMap,
+    Notification,
     PyrightInitializationOptions,
     RustAnalyzerInitializationOptions,
     TypeScriptInitializationOptions,
-    ESLintInitializationOptions,
-    ClangdInitializationOptions,
-    GoplsInitializationOptions,
 } from './types/lsp';
-
 export type {
+    FetchTransportOptions,
     Transport,
     TransportOptions,
     WebSocketTransportOptions,
-    FetchTransportOptions,
 } from './types/transport';
-
-// Export plugin components for advanced usage
-export { LanguageServerPlugin } from './plugin/LanguageServerPlugin';
-export type { LanguageServerPluginOptions } from './plugin/LanguageServerPlugin';
-export { client, documentUri, languageId } from './plugin/facets';
-
-// Export feature providers for extensibility
-export type {
-    HoverProvider,
-    CompletionProvider,
-    DiagnosticsProvider,
-} from './features';
-export {
-    DefaultHoverProvider,
-    DefaultCompletionProvider,
-    DefaultDiagnosticsProvider,
-    createDiagnosticsProvider,
-} from './features';
-
-// Export transports
-export { WebSocketTransport } from '@open-rpc/client-js';
-
 // Export utility functions
 export {
-    posToOffset,
-    offsetToPos,
     formatContents,
-    toSet,
-    prefixMatch,
-    isLSPTextEdit,
     isLSPMarkupContent,
+    isLSPTextEdit,
+    offsetToPos,
+    posToOffset,
+    prefixMatch,
+    toSet,
 } from './utils';

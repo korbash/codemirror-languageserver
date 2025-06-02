@@ -1,5 +1,4 @@
 import * as LSP from 'vscode-languageserver-protocol';
-import { marked } from 'marked';
 
 export function formatContents(
     contents: LSP.MarkupContent | LSP.MarkedString | LSP.MarkedString[]
@@ -52,5 +51,9 @@ export function isLSPTextEdit(edit: any): edit is LSP.TextEdit {
 }
 
 export function isLSPMarkupContent(content: any): content is LSP.MarkupContent {
-    return content && typeof content.kind === 'string' && typeof content.value === 'string';
+    return (
+        content &&
+        typeof content.kind === 'string' &&
+        typeof content.value === 'string'
+    );
 }
