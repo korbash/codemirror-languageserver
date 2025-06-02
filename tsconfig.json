@@ -1,8 +1,16 @@
 {
     "compilerOptions": {
-        "moduleResolution": "node",
-        "target": "ES2019",
+        "moduleResolution": "bundler",
+        "target": "ES2022",
+        "module": "ESNext",
+        "lib": ["ES2022", "DOM"],
         "rootDir": "src",
-        "declaration": true
+        "outDir": "dist",
+        "declaration": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "skipLibCheck": true,
+        "noEmitOnError": false
     }
 }
