@@ -1,69 +1,64 @@
-# Language Server Plugin for CodeMirror 6
+# CodeMirror 6 Language Server Plugin (Full Python)
 
-[![npm version](https://badge.fury.io/js/codemirror-languageserver.svg)](https://www.npmjs.com/package/codemirror-languageserver)
+A CodeMirror 6 extension that connects to any Language Server over WebSocket to provide full Python support:
+- Auto-completion  
+- Hover tooltips  
+- Diagnostics and linting  
 
-This plugin enables code completion, hover tooltips, and linter functionality by connecting a CodeMirror 6 editor with a language server over WebSocket.
+## Installation
 
-[How It Works](https://hjr265.me/blog/codemirror-lsp/)
+Install directly from the GitHub branch:
+
+```bash
+npm install github:korbash/codemirror-languageserver#full-python
+```
 
 ## Usage
 
-```
-npm i codemirror-languageserver
-```
-
 ```js
-import { languageServer } from 'codemirror-languageserver';
+import { EditorState, EditorView } from '@codemirror/basic-setup';
+import { languageServer, LanguageServerClient } from 'codemirror-languageserver';
+import { WebSocketTransport } from '@open-rpc/client-js';
+import { python } from '@codemirror/lang-python';
 
-const transport = new WebSocketTransport(serverUri);
+// Configure the Language Server plugin for Python
+const options = {
+  serverUri: 'ws://localhost:3000',
+  rootUri: 'file:///',
+  documentUri: 'file:///path/to/script.py',
+  languageId: 'python',
+  // Optional: reuse a client across editors
+  // client: new LanguageServerClient({ serverUri, rootUri })
+};
+const ls = languageServer(options);
 
-var ls = languageServer({
-    // WebSocket server uri and other client options.
-    serverUri,
-    rootUri: 'file:///',
-
-    // Alternatively, to share the same client across multiple instances of this plugin.
-    client: new LanguageServerClient({
-        serverUri,
-        rootUri: 'file:///',
-    }),
-
-    documentUri: `file:///${filename}`,
-    languageId: 'cpp', // As defined at https://microsoft.github.io/language-server-protocol/specification#textDocumentItem.
-});
-
-var view = new EditorView({
-    state: EditorState.create({
-        extensions: [
-            // ...
-            ls,
-            // ...
-        ],
-    }),
+// Create the editor
+const view = new EditorView({
+  state: EditorState.create({
+    extensions: [
+      python(),
+      ls
+    ]
+  }),
+  parent: document.body
 });
 ```
 
-### Using with Initialization Options
+## Features
 
-The plugin includes built-in TypeScript definitions for popular language servers:
+- Hover tooltips via `hoverTooltip`  
+- Inline completions via `autocompletion`  
+- Real-time diagnostics via `linter`  
 
--   `PyrightInitializationOptions` - Python (Pyright)
--   `RustAnalyzerInitializationOptions` - Rust (rust-analyzer)
--   `TypeScriptInitializationOptions` - TypeScript/JavaScript
--   `ESLintInitializationOptions` - ESLint
--   `ClangdInitializationOptions` - C/C++ (Clangd)
--   `GoplsInitializationOptions` - Go (Gopls)
+## Exports
 
-## Contributing
-
-Contributions are welcome.
-
-## Real World Uses
-
-https://user-images.githubusercontent.com/348107/120141150-c6bb9180-c1fd-11eb-8ada-9b7b7a1e4ade.mp4
-
--   [Toph](https://toph.co): Competitive programming platform. Toph uses Language Server Plugin for CodeMirror 6 with its integrated code editor.
+- `languageServer(options)`  
+- `languageServerWithTransport(options)`  
+- `LanguageServerClient`  
+- Facets: `client`, `documentUri`, `languageId`  
+- Providers: `DefaultHoverProvider`, `DefaultCompletionProvider`, `DefaultDiagnosticsProvider`  
+- Plugin: `LanguageServerPlugin`  
 
 ## License
 
-The library is available under the BSD (3-Clause) License.
+BSD-3-Clause
