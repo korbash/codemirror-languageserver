@@ -9,7 +9,7 @@ export interface HoverProvider {
     provideHover(
         client: LanguageServerClient,
         view: EditorView,
-        position: LSP.Position
+        position: LSP.Position,
     ): Promise<{
         pos: number;
         end?: number;
@@ -28,7 +28,7 @@ export class DefaultHoverProvider implements HoverProvider {
     public async provideHover(
         client: LanguageServerClient,
         view: EditorView,
-        position: LSP.Position
+        position: LSP.Position,
     ): Promise<{
         pos: number;
         end?: number;

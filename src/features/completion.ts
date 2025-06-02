@@ -13,7 +13,7 @@ export interface CompletionProvider {
         trigger: {
             triggerKind: LSP.CompletionTriggerKind;
             triggerCharacter?: string;
-        }
+        },
     ): Promise<CompletionResult | null>;
 }
 
@@ -29,7 +29,7 @@ export class DefaultCompletionProvider implements CompletionProvider {
         trigger: {
             triggerKind: LSP.CompletionTriggerKind;
             triggerCharacter?: string;
-        }
+        },
     ): Promise<CompletionResult | null> {
         if (!this.isSupported(client.capabilities)) {
             return null;
@@ -59,7 +59,7 @@ export class DefaultCompletionProvider implements CompletionProvider {
             return {
                 from: this.getCompletionStart(context),
                 options: items.map((item) =>
-                    this.convertCompletionItem(item, context)
+                    this.convertCompletionItem(item, context),
                 ),
             };
         } catch (error) {
@@ -75,7 +75,7 @@ export class DefaultCompletionProvider implements CompletionProvider {
 
     private convertCompletionItem(
         item: LSP.CompletionItem,
-        context: CompletionContext
+        context: CompletionContext,
     ): any {
         const completion: any = {
             label: item.label,
@@ -92,16 +92,16 @@ export class DefaultCompletionProvider implements CompletionProvider {
                     view: EditorView,
                     completion: any,
                     from: number,
-                    to: number
+                    to: number,
                 ) => {
                     const edit = item.textEdit as LSP.TextEdit;
                     const editFrom = this.positionToOffset(
                         view.state.doc,
-                        edit.range.start
+                        edit.range.start,
                     );
                     const editTo = this.positionToOffset(
                         view.state.doc,
-                        edit.range.end
+                        edit.range.end,
                     );
 
                     view.dispatch({

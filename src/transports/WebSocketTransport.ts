@@ -9,7 +9,10 @@ export class WebSocketTransport implements Transport {
     private reconnectAttempts = 0;
     private reconnectTimer: number | null = null;
 
-    constructor(private url: string, options: WebSocketTransportOptions = {}) {
+    constructor(
+        private url: string,
+        options: WebSocketTransportOptions = {},
+    ) {
         this.options = {
             timeout: 30000,
             reconnectAttempts: 3,

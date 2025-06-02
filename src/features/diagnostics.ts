@@ -7,7 +7,7 @@ export interface DiagnosticsProvider {
     isSupported(capabilities: LSP.ServerCapabilities): boolean;
     processDiagnostics(
         view: EditorView,
-        params: LSP.PublishDiagnosticsParams
+        params: LSP.PublishDiagnosticsParams,
     ): Diagnostic[];
 }
 
@@ -19,7 +19,7 @@ export class DefaultDiagnosticsProvider implements DiagnosticsProvider {
 
     public processDiagnostics(
         view: EditorView,
-        params: LSP.PublishDiagnosticsParams
+        params: LSP.PublishDiagnosticsParams,
     ): Diagnostic[] {
         const diagnostics: Diagnostic[] = [];
         const doc = view.state.doc;
@@ -42,7 +42,7 @@ export class DefaultDiagnosticsProvider implements DiagnosticsProvider {
                 console.warn(
                     'Failed to process diagnostic:',
                     diagnostic,
-                    error
+                    error,
                 );
             }
         }
@@ -51,7 +51,7 @@ export class DefaultDiagnosticsProvider implements DiagnosticsProvider {
     }
 
     private mapSeverity(
-        severity?: LSP.DiagnosticSeverity
+        severity?: LSP.DiagnosticSeverity,
     ): 'error' | 'warning' | 'info' | 'hint' {
         switch (severity) {
             case LSP.DiagnosticSeverity.Error:
@@ -82,7 +82,7 @@ export class DefaultDiagnosticsProvider implements DiagnosticsProvider {
 }
 
 export function createDiagnosticsProvider(
-    options: { allowCodeActions?: boolean } = {}
+    options: { allowCodeActions?: boolean } = {},
 ): DiagnosticsProvider {
     return new DefaultDiagnosticsProvider();
 }

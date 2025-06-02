@@ -55,10 +55,10 @@ export class LanguageServerClient<TInitOptions = unknown> {
                                 jsonrpc: '2.0',
                                 id: data.id,
                                 result: null,
-                            })
+                            }),
                         );
                     }
-                }
+                },
             );
         }
 
@@ -117,31 +117,8 @@ export class LanguageServerClient<TInitOptions = unknown> {
                         },
                         completionItemKind: {
                             valueSet: [
-                                1,
-                                2,
-                                3,
-                                4,
-                                5,
-                                6,
-                                7,
-                                8,
-                                9,
-                                10,
-                                11,
-                                12,
-                                13,
-                                14,
-                                15,
-                                16,
-                                17,
-                                18,
-                                19,
-                                20,
-                                21,
-                                22,
-                                23,
-                                24,
-                                25,
+                                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+                                15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
                             ],
                         },
                         contextSupport: true,
@@ -168,32 +145,8 @@ export class LanguageServerClient<TInitOptions = unknown> {
                         dynamicRegistration: false,
                         symbolKind: {
                             valueSet: [
-                                1,
-                                2,
-                                3,
-                                4,
-                                5,
-                                6,
-                                7,
-                                8,
-                                9,
-                                10,
-                                11,
-                                12,
-                                13,
-                                14,
-                                15,
-                                16,
-                                17,
-                                18,
-                                19,
-                                20,
-                                21,
-                                22,
-                                23,
-                                24,
-                                25,
-                                26,
+                                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+                                15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
                             ],
                         },
                     },
@@ -214,7 +167,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
         const initializeResult = await this.request(
             'initialize',
             params,
-            timeout
+            timeout,
         );
         this.capabilities = initializeResult.capabilities;
         this.ready = true;
@@ -262,7 +215,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
     public sendRequest<T = any>(
         method: string,
         params?: any,
-        requestTimeout: number = timeout
+        requestTimeout: number = timeout,
     ): Promise<T> {
         return this.client.request({ method, params }, requestTimeout);
     }
@@ -276,14 +229,14 @@ export class LanguageServerClient<TInitOptions = unknown> {
     public request<K extends keyof LSPRequestMap>(
         method: K,
         params: LSPRequestMap[K][0],
-        requestTimeout: number = timeout
+        requestTimeout: number = timeout,
     ): Promise<LSPRequestMap[K][1]> {
         return this.client.request({ method, params }, requestTimeout);
     }
 
     public notify<K extends keyof LSPNotifyMap>(
         method: K,
-        params: LSPNotifyMap[K]
+        params: LSPNotifyMap[K],
     ): Promise<LSPNotifyMap[K]> {
         return this.client.notify({ method, params });
     }

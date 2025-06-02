@@ -16,7 +16,7 @@ import {
 } from './LanguageServerPlugin';
 
 export function languageServer<TInitOptions = unknown>(
-    options: LanguageServerWebsocketOptions<TInitOptions>
+    options: LanguageServerWebsocketOptions<TInitOptions>,
 ) {
     const serverUri = options.serverUri;
     const { serverUri: _, ...optionsWithoutServerUri } = options;
@@ -29,7 +29,7 @@ export function languageServer<TInitOptions = unknown>(
 }
 
 export function languageServerWithTransport<TInitOptions = unknown>(
-    options: LanguageServerOptions<TInitOptions>
+    options: LanguageServerOptions<TInitOptions>,
 ) {
     let plugin: LanguageServerPlugin | null = null;
 
@@ -43,19 +43,19 @@ export function languageServerWithTransport<TInitOptions = unknown>(
                 new LanguageServerClient<TInitOptions>({
                     ...options,
                     autoClose: true,
-                })
+                }),
         ),
         documentUri.of(options.documentUri),
         languageId.of(options.languageId),
         ViewPlugin.define(
-            (view) => (plugin = new LanguageServerPlugin(view, pluginOptions))
+            (view) => (plugin = new LanguageServerPlugin(view, pluginOptions)),
         ),
         hoverTooltip(
             (view, pos) =>
                 plugin?.requestHoverTooltip(
                     view,
-                    offsetToPos(view.state.doc, pos)
-                ) ?? null
+                    offsetToPos(view.state.doc, pos),
+                ) ?? null,
         ),
         autocompletion({
             override: [
@@ -72,7 +72,7 @@ export function languageServerWithTransport<TInitOptions = unknown>(
                     if (
                         !explicit &&
                         plugin.client.capabilities?.completionProvider?.triggerCharacters?.includes(
-                            line.text[pos - line.from - 1]
+                            line.text[pos - line.from - 1],
                         )
                     ) {
                         trigKind = LSP.CompletionTriggerKind.TriggerCharacter;
@@ -90,7 +90,7 @@ export function languageServerWithTransport<TInitOptions = unknown>(
                         {
                             triggerCharacter: trigChar,
                             triggerKind: trigKind,
-                        }
+                        },
                     );
                 },
             ],

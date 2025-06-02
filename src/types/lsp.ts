@@ -6,7 +6,7 @@ export interface LSPRequestMap {
     'textDocument/hover': [LSP.HoverParams, LSP.Hover];
     'textDocument/completion': [
         LSP.CompletionParams,
-        LSP.CompletionItem[] | LSP.CompletionList | null
+        LSP.CompletionItem[] | LSP.CompletionList | null,
     ];
 }
 

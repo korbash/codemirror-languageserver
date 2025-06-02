@@ -37,7 +37,7 @@ export class LanguageServerPlugin implements PluginValue {
 
     constructor(
         private view: EditorView,
-        private options: LanguageServerPluginOptions = {}
+        private options: LanguageServerPluginOptions = {},
     ) {
         this.client = this.view.state.facet(client);
         this.documentUri = this.view.state.facet(documentUri);
@@ -128,7 +128,7 @@ export class LanguageServerPlugin implements PluginValue {
         trigger: {
             triggerKind: LSP.CompletionTriggerKind;
             triggerCharacter?: string;
-        }
+        },
     ) {
         await this.client.initializePromise;
 
@@ -143,7 +143,7 @@ export class LanguageServerPlugin implements PluginValue {
             {
                 triggerKind: trigger.triggerKind,
                 triggerCharacter: trigger.triggerCharacter,
-            }
+            },
         );
     }
 
@@ -162,7 +162,7 @@ export class LanguageServerPlugin implements PluginValue {
 
         const diagnostics = this.diagnosticsProvider.processDiagnostics(
             this.view,
-            params
+            params,
         );
         this.view.dispatch(setDiagnostics(this.view.state, diagnostics));
     }

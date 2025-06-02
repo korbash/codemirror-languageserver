@@ -1,7 +1,7 @@
 import * as LSP from 'vscode-languageserver-protocol';
 
 export function formatContents(
-    contents: LSP.MarkupContent | LSP.MarkedString | LSP.MarkedString[]
+    contents: LSP.MarkupContent | LSP.MarkedString | LSP.MarkedString[],
 ): { dom: Node; pos?: { line: number; ch: number } } | null {
     if (!contents) {
         return null;
