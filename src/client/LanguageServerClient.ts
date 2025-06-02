@@ -7,6 +7,11 @@ import {
     Notification,
     LanguageServerClientOptions,
 } from '../types/lsp';
+import {
+    createLogger,
+    logAsyncMethodCall,
+    logMethodCall,
+} from '../utils/logger';
 
 const timeout = 10000;
 
@@ -25,31 +30,50 @@ export class LanguageServerClient<TInitOptions = unknown> {
 
     private plugins: any[] = [];
     private options: LanguageServerClientOptions<TInitOptions>;
+    private logger = createLogger('CLIENT');
 
     constructor(options: LanguageServerClientOptions<TInitOptions>) {
+        this.logger.info('Creating LanguageServerClient', {
+            rootUri: options.rootUri,
+            autoClose: options.autoClose,
+            hasTransport: !!options.transport,
+            workspaceFolders: options.workspaceFolders?.length || 0,
+        });
+
         this.options = options;
         this.rootUri = options.rootUri;
         this.workspaceFolders = options.workspaceFolders;
         this.autoClose = options.autoClose || false;
         this.transport = options.transport;
 
+        this.logger.debug('Creating RequestManager and Client');
         this.requestManager = new RequestManager([this.transport]);
         this.client = new Client(this.requestManager);
 
         this.client.onNotification((data) => {
+            this.logger.trace('Received notification:', data);
             this.processNotification(data as any);
         });
 
         // Handle WebSocket-specific logic if needed
         const webSocketTransport = this.transport as any;
         if (webSocketTransport && webSocketTransport.connection) {
+            this.logger.debug('Setting up WebSocket transport event handlers');
             // XXX(hjr265): Need a better way to do this. Relevant issue:
             // https://github.com/FurqanSoftware/codemirror-languageserver/issues/9
             webSocketTransport.connection.addEventListener(
                 'message',
                 (message: MessageEvent) => {
+                    this.logger.trace(
+                        'WebSocket message received:',
+                        message.data,
+                    );
                     const data = JSON.parse(message.data);
                     if (data.method && data.id) {
+                        this.logger.trace(
+                            'Sending null response for method:',
+                            data.method,
+                        );
                         webSocketTransport.connection.send(
                             JSON.stringify({
                                 jsonrpc: '2.0',
@@ -60,8 +84,31 @@ export class LanguageServerClient<TInitOptions = unknown> {
                     }
                 },
             );
+
+            webSocketTransport.connection.addEventListener('open', () => {
+                this.logger.info('WebSocket connection opened');
+            });
+
+            webSocketTransport.connection.addEventListener(
+                'close',
+                (event: CloseEvent) => {
+                    this.logger.warn('WebSocket connection closed', {
+                        code: event.code,
+                        reason: event.reason,
+                        wasClean: event.wasClean,
+                    });
+                },
+            );
+
+            webSocketTransport.connection.addEventListener(
+                'error',
+                (error: Event) => {
+                    this.logger.error('WebSocket connection error:', error);
+                },
+            );
         }
 
+        this.logger.debug('Starting initialization');
         this.initializePromise = this.initialize();
     }
 
@@ -163,50 +210,113 @@ export class LanguageServerClient<TInitOptions = unknown> {
     }
 
     public async initialize(): Promise<void> {
-        const params = this.getInitializationOptions();
-        const initializeResult = await this.request(
-            'initialize',
-            params,
-            timeout,
-        );
-        this.capabilities = initializeResult.capabilities;
-        this.ready = true;
-        await this.notify('initialized', {});
-    }
+        this.logger.info('Starting LSP server initialization');
 
-    public close(): void {
-        if (this.transport && typeof this.transport.close === 'function') {
-            this.transport.close();
+        try {
+            const params = this.getInitializationOptions();
+            this.logger.debug(
+                'Sending initialize request with params:',
+                params,
+            );
+
+            const initializeResult = await this.request(
+                'initialize',
+                params,
+                timeout,
+            );
+
+            this.logger.debug('Initialize result received:', initializeResult);
+            this.capabilities = initializeResult.capabilities;
+            this.logger.info('Server capabilities set:', this.capabilities);
+
+            this.ready = true;
+            this.logger.info('Client marked as ready');
+
+            await this.notify('initialized', {});
+            this.logger.info(
+                'LSP server initialization completed successfully',
+            );
+        } catch (error) {
+            this.logger.error('LSP server initialization failed:', error);
+            throw error;
         }
     }
 
+    public close(): void {
+        this.logger.info('Closing LanguageServerClient');
+        if (this.transport && typeof this.transport.close === 'function') {
+            this.logger.debug('Closing transport connection');
+            this.transport.close();
+        } else {
+            this.logger.warn('Transport does not support close() method');
+        }
+        this.ready = false;
+        this.logger.info('LanguageServerClient closed');
+    }
+
     public textDocumentDidOpen(params: LSP.DidOpenTextDocumentParams) {
+        this.logger.debug('textDocumentDidOpen called', {
+            uri: params.textDocument.uri,
+            languageId: params.textDocument.languageId,
+            version: params.textDocument.version,
+        });
         return this.notify('textDocument/didOpen', params);
     }
 
     public textDocumentDidChange(params: LSP.DidChangeTextDocumentParams) {
+        this.logger.debug('textDocumentDidChange called', {
+            uri: params.textDocument.uri,
+            version: params.textDocument.version,
+            changesCount: params.contentChanges.length,
+        });
         return this.notify('textDocument/didChange', params);
     }
 
     public async textDocumentHover(params: LSP.HoverParams) {
+        this.logger.debug('textDocumentHover called', {
+            uri: params.textDocument.uri,
+            position: params.position,
+        });
         return await this.request('textDocument/hover', params, timeout);
     }
 
     public async textDocumentCompletion(params: LSP.CompletionParams) {
+        this.logger.debug('textDocumentCompletion called', {
+            uri: params.textDocument.uri,
+            position: params.position,
+            context: params.context,
+        });
         return await this.request('textDocument/completion', params, timeout);
     }
 
     public attachPlugin(plugin: any) {
+        this.logger.debug('Attaching plugin', {
+            pluginType: plugin.constructor?.name,
+        });
         this.plugins.push(plugin);
+        this.logger.info(
+            'Plugin attached, total plugins:',
+            this.plugins.length,
+        );
     }
 
     public detachPlugin(plugin: any) {
+        this.logger.debug('Detaching plugin', {
+            pluginType: plugin.constructor?.name,
+        });
         const i = this.plugins.indexOf(plugin);
         if (i === -1) {
+            this.logger.warn('Plugin not found for detachment');
             return;
         }
         this.plugins.splice(i, 1);
+        this.logger.info(
+            'Plugin detached, remaining plugins:',
+            this.plugins.length,
+        );
+
         if (this.autoClose && this.plugins.length === 0) {
+            this.logger.info('No plugins remaining, auto-closing client');
             this.close();
         }
     }
@@ -217,12 +327,27 @@ export class LanguageServerClient<TInitOptions = unknown> {
         params?: any,
         requestTimeout: number = timeout,
     ): Promise<T> {
-        return this.client.request({ method, params }, requestTimeout);
+        this.logger.debug('sendRequest called', { method, requestTimeout });
+        return logAsyncMethodCall(
+            this.logger,
+            `sendRequest(${method})`,
+            (method: string, params?: any, requestTimeout?: number) =>
+                this.client.request(
+                    { method, params },
+                    requestTimeout || timeout,
+                ),
+        )(method, params, requestTimeout);
     }
 
     // Public API for any LSP notifications
     public sendNotification(method: string, params?: any): Promise<any> {
-        return this.client.notify({ method, params });
+        this.logger.debug('sendNotification called', { method });
+        return logAsyncMethodCall(
+            this.logger,
+            `sendNotification(${method})`,
+            (method: string, params?: any) =>
+                this.client.notify({ method, params }),
+        )(method, params);
     }
 
     // Typed versions for known methods
@@ -231,20 +356,52 @@ export class LanguageServerClient<TInitOptions = unknown> {
         params: LSPRequestMap[K][0],
         requestTimeout: number = timeout,
     ): Promise<LSPRequestMap[K][1]> {
-        return this.client.request({ method, params }, requestTimeout);
+        this.logger.debug('request called', { method, requestTimeout });
+        return logAsyncMethodCall(
+            this.logger,
+            `request(${method})`,
+            (method: K, params: LSPRequestMap[K][0], requestTimeout?: number) =>
+                this.client.request(
+                    { method, params },
+                    requestTimeout || timeout,
+                ),
+        )(method, params, requestTimeout);
     }
 
     public notify<K extends keyof LSPNotifyMap>(
         method: K,
         params: LSPNotifyMap[K],
     ): Promise<LSPNotifyMap[K]> {
-        return this.client.notify({ method, params });
+        this.logger.debug('notify called', { method });
+        return logAsyncMethodCall(
+            this.logger,
+            `notify(${method})`,
+            (method: K, params: LSPNotifyMap[K]) =>
+                this.client.notify({ method, params }),
+        )(method, params);
     }
 
     protected processNotification(notification: Notification) {
+        this.logger.debug('Processing notification', {
+            method: notification.method,
+            pluginCount: this.plugins.length,
+        });
+
         for (const plugin of this.plugins) {
             if (plugin.processNotification) {
-                plugin.processNotification(notification);
+                try {
+                    this.logger.trace('Processing notification with plugin', {
+                        pluginType: plugin.constructor?.name,
+                        method: notification.method,
+                    });
+                    plugin.processNotification(notification);
+                } catch (error) {
+                    this.logger.error('Plugin failed to process notification', {
+                        pluginType: plugin.constructor?.name,
+                        method: notification.method,
+                        error,
+                    });
+                }
             }
         }
     }

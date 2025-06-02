@@ -51,4 +51,15 @@ export {
     posToOffset,
     prefixMatch,
     toSet,
+    // Logger utilities
+    createLogger,
+    setLogLevel,
+    getLogLevel,
+    enableAll,
+    disableAll,
+    logger,
+    logMethodCall,
+    logAsyncMethodCall,
 } from './utils';
+// Export logger types
+export type { Logger, LogLevel, ModuleName } from './utils';

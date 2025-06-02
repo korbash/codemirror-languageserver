@@ -21,9 +21,13 @@ import { EditorState, EditorView } from '@codemirror/basic-setup';
 import {
     languageServer,
     LanguageServerClient,
+    setLogLevel,
 } from 'codemirror-languageserver';
 import { WebSocketTransport } from '@open-rpc/client-js';
 import { python } from '@codemirror/lang-python';
+
+// Optional: Enable debug logging
+setLogLevel('DEBUG');
 
 // Configure the Language Server plugin for Python
 const options = {
@@ -44,6 +48,49 @@ const view = new EditorView({
     parent: document.body,
 });
 ```
+
+## Logging and Debugging
+
+The plugin includes a comprehensive logging system to help with development and debugging:
+
+```js
+import {
+    setLogLevel,
+    getLogLevel,
+    createLogger,
+} from 'codemirror-languageserver';
+
+// Set log level (TRACE, DEBUG, INFO, WARN, ERROR, SILENT)
+setLogLevel('DEBUG');
+
+// Get current log level
+console.log('Current level:', getLogLevel());
+
+// Create custom logger for your code
+const logger = createLogger('CUSTOM');
+logger.info('My component initialized');
+```
+
+### Available Log Levels
+
+- **TRACE**: Extremely detailed information (performance impact)
+- **DEBUG**: Detailed operational information
+- **INFO**: General information about significant events
+- **WARN**: Warning messages (production default)
+- **ERROR**: Error messages only
+- **SILENT**: No logging
+
+### Module Prefixes
+
+Logs are prefixed by module for easy filtering:
+
+- `[LSP-Client]`: Language server client operations
+- `[LSP-Plugin]`: Plugin lifecycle and coordination
+- `[Completion]`: Code completion feature
+- `[Hover]`: Hover tooltip feature
+- `[Diagnostics]`: Error/warning diagnostics
+
+For detailed logging documentation, see [docs/logging.md](docs/logging.md).
 
 ## Features
 

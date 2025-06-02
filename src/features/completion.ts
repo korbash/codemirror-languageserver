@@ -3,6 +3,7 @@ import { EditorView } from '@codemirror/view';
 import * as LSP from 'vscode-languageserver-protocol';
 import { LanguageServerClient } from '../client/LanguageServerClient';
 import { documentUri } from '../plugin/facets';
+import { createLogger } from '../utils/logger';
 
 export interface CompletionProvider {
     isSupported(capabilities: LSP.ServerCapabilities): boolean;
@@ -18,8 +19,19 @@ export interface CompletionProvider {
 }
 
 export class DefaultCompletionProvider implements CompletionProvider {
+    private logger = createLogger('COMPLETION');
+
+    constructor() {
+        this.logger.debug('DefaultCompletionProvider created');
+    }
+
     public isSupported(capabilities: LSP.ServerCapabilities): boolean {
-        return !!capabilities.completionProvider;
+        const supported = !!capabilities.completionProvider;
+        this.logger.debug('Checking completion support', {
+            supported,
+            completionProvider: capabilities.completionProvider,
+        });
+        return supported;
     }
 
     public async provideCompletion(
@@ -31,15 +43,23 @@ export class DefaultCompletionProvider implements CompletionProvider {
             triggerCharacter?: string;
         },
     ): Promise<CompletionResult | null> {
+        const uri = context.state.facet(documentUri);
+        this.logger.debug('provideCompletion called', {
+            uri,
+            position,
+            triggerKind: trigger.triggerKind,
+            triggerCharacter: trigger.triggerCharacter,
+        });
+
         if (!this.isSupported(client.capabilities)) {
+            this.logger.debug('Completion not supported, returning null');
             return null;
         }
 
         try {
+            this.logger.trace('Sending textDocumentCompletion request');
             const result = await client.textDocumentCompletion({
-                textDocument: {
-                    uri: context.state.facet(documentUri),
-                },
+                textDocument: { uri },
                 position,
                 context: {
                     triggerKind: trigger.triggerKind,
@@ -47,36 +67,65 @@ export class DefaultCompletionProvider implements CompletionProvider {
                 },
             });
 
+            this.logger.debug('Completion response received', {
+                hasResult: !!result,
+                isArray: Array.isArray(result),
+                resultType: typeof result,
+            });
+
             if (!result) {
+                this.logger.debug('No completion result, returning null');
                 return null;
             }
 
             const items = Array.isArray(result) ? result : result.items;
             if (!items || items.length === 0) {
+                this.logger.debug('No completion items found, returning null');
                 return null;
             }
 
+            const completionStart = this.getCompletionStart(context);
+            this.logger.debug('Creating completion result', {
+                itemsCount: items.length,
+                completionStart,
+            });
+
             return {
-                from: this.getCompletionStart(context),
+                from: completionStart,
                 options: items.map((item) =>
                     this.convertCompletionItem(item, context),
                 ),
             };
         } catch (error) {
-            console.error('Completion request failed:', error);
+            this.logger.error('Completion request failed:', error);
             return null;
         }
     }
 
     private getCompletionStart(context: CompletionContext): number {
         const word = context.matchBefore(/\w+$/);
-        return word ? word.from : context.pos;
+        const start = word ? word.from : context.pos;
+        this.logger.trace('Calculated completion start', {
+            hasMatchBefore: !!word,
+            contextPos: context.pos,
+            calculatedStart: start,
+        });
+        return start;
     }
 
     private convertCompletionItem(
         item: LSP.CompletionItem,
         context: CompletionContext,
     ): any {
+        this.logger.trace('Converting completion item', {
+            label: item.label,
+            kind: item.kind,
+            hasDetail: !!item.detail,
+            hasDocumentation: !!item.documentation,
+            hasTextEdit: !!item.textEdit,
+            hasInsertText: !!item.insertText,
+        });
+
         const completion: any = {
             label: item.label,
             detail: item.detail,
@@ -88,6 +137,9 @@ export class DefaultCompletionProvider implements CompletionProvider {
 
         if (item.textEdit) {
             if (this.isLSPTextEdit(item.textEdit)) {
+                this.logger.trace(
+                    'Setting up textEdit apply function for completion item',
+                );
                 completion.apply = (
                     view: EditorView,
                     completion: any,
@@ -104,6 +156,12 @@ export class DefaultCompletionProvider implements CompletionProvider {
                         edit.range.end,
                     );
 
+                    this.logger.trace('Applying textEdit', {
+                        editFrom,
+                        editTo,
+                        newText: edit.newText,
+                    });
+
                     view.dispatch({
                         changes: {
                             from: editFrom,
@@ -114,6 +172,7 @@ export class DefaultCompletionProvider implements CompletionProvider {
                 };
             }
         } else if (item.insertText) {
+            this.logger.trace('Using insertText for completion item');
             completion.apply = item.insertText;
         }
 
@@ -164,10 +223,29 @@ export class DefaultCompletionProvider implements CompletionProvider {
     }
 
     private positionToOffset(doc: any, position: LSP.Position): number {
+        this.logger.trace('Converting position to offset', {
+            position,
+            docLines: doc.lines,
+            docLength: doc.length,
+        });
+
         if (position.line >= doc.lines) {
+            this.logger.trace(
+                'Position line beyond document, returning doc length',
+            );
             return doc.length;
         }
+
         const line = doc.line(position.line + 1);
-        return Math.min(line.from + position.character, line.to);
+        const offset = Math.min(line.from + position.character, line.to);
+
+        this.logger.trace('Position converted to offset', {
+            lineFrom: line.from,
+            lineTo: line.to,
+            character: position.character,
+            finalOffset: offset,
+        });
+
+        return offset;
     }
 }

@@ -41,6 +41,8 @@
         "@codemirror/state": "^6.5.2",
         "@codemirror/view": "^6.37.1",
         "@open-rpc/client-js": "^1.8.1",
+        "@types/loglevel": "^1.5.4",
+        "loglevel": "^1.9.2",
         "marked": "^15.0.12",
         "vscode-languageserver-protocol": "^3.17.5"
     },
