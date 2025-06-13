@@ -197,7 +197,9 @@ if (client && client.ready) {
 - `cancelRequest(requestId, reason?)`
 - `getPendingRequests()`
 
-## Cancellation Utilities
+## Timeout Management
+
+All timeouts are managed through `AbortSignal`. The library does not use internal timeouts - all cancellation logic is controlled by the user:
 
 ```js
 import {
@@ -206,27 +208,98 @@ import {
     RequestCancellation,
 } from 'codemirror-languageserver';
 
-// Auto-cancel after timeout
-const controller = createAbortControllerWithTimeout(5000);
+// Different timeouts for different types of operations
+const client = getLanguageServerClient(view);
+
+// Fast operations - short timeout
+const hoverResult = await client.textDocumentHover(
+    params,
+    createAbortControllerWithTimeout(3000).signal, // 3 seconds
+);
+
+// Auto-completion - medium timeout
+const completion = await client.textDocumentCompletion(
+    params,
+    createAbortControllerWithTimeout(10000).signal, // 10 seconds
+);
+
+// Complex operations - long timeout
+const symbols = await client.sendRequest(
+    'textDocument/documentSymbol',
+    params,
+    createAbortControllerWithTimeout(30000).signal, // 30 seconds
+);
 
 // Combine multiple signals
-const combined = combineAbortSignals(userSignal, timeoutSignal);
+const userController = new AbortController();
+const timeoutController = createAbortControllerWithTimeout(30000);
+const combined = combineAbortSignals(
+    userController.signal,
+    timeoutController.signal,
+);
+const result = await client.textDocumentHover(params, combined);
 
 // Check if error is cancellation
 if (RequestCancellation.isCancellationError(error)) {
     return null; // Ignore cancellation
 }
-
-// Different timeouts for different operations
-const hoverResult = await client.textDocumentHover(
-    params,
-    createAbortControllerWithTimeout(3000).signal,
-);
-const completion = await client.textDocumentCompletion(
-    params,
-    createAbortControllerWithTimeout(10000).signal,
-);
 ```
+
+### Smart Cancellation of Outdated Requests
+
+```js
+class HoverProvider {
+    constructor() {
+        this.currentController = null;
+    }
+
+    async provideHover(params) {
+        // Cancel previous request
+        this.currentController?.abort();
+
+        // Create new one with timeout
+        this.currentController = createAbortControllerWithTimeout(3000);
+
+        try {
+            const result = await client.textDocumentHover(
+                params,
+                this.currentController.signal,
+            );
+            return result;
+        } finally {
+            this.currentController = null;
+        }
+    }
+}
+```
+
+## Timeout Principles
+
+The library follows these principles for timeout management:
+
+- **No internal timeouts**: The library does not impose any default timeouts
+- **User-controlled**: All timeout logic is managed through `AbortSignal`
+- **Flexible**: Different operations can have different timeout strategies
+- **Composable**: Multiple signals can be combined using `combineAbortSignals`
+
+```js
+// If no AbortSignal is provided, operations run until completion or error
+const result = await client.textDocumentHover(params); // No timeout
+
+// User controls timeout per operation
+const quickResult = await client.textDocumentHover(
+    params,
+    createAbortControllerWithTimeout(1000).signal,
+);
+
+// Session-wide timeout combined with operation-specific timeout
+const sessionSignal = createAbortControllerWithTimeout(300000).signal;
+const operationSignal = createAbortControllerWithTimeout(5000).signal;
+const combined = combineAbortSignals(sessionSignal, operationSignal);
+const result = await client.textDocumentCompletion(params, combined);
+```
+
+## Cancellation Utilities
 
 ## Logging
 

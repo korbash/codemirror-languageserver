@@ -7,18 +7,8 @@ import {
     Notification,
     LanguageServerClientOptions,
 } from '../types/lsp';
-import {
-    createLogger,
-    logAsyncMethodCall,
-    logMethodCall,
-} from '../utils/logger';
-import {
-    createAbortControllerWithTimeout,
-    combineAbortSignals,
-} from '../utils/abort';
+import { createLogger, logAsyncMethodCall } from '../utils/logger';
 import { RequestCancellation } from './RequestCancellation';
-
-const timeout = 10000;
 
 export class LanguageServerClient<TInitOptions = unknown> {
     public ready: boolean = false;
@@ -468,7 +458,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
                 this.logger,
                 `requestWithCancellation(${method})`,
                 (method: string, params?: any) =>
-                    this.client.request({ method, params }, timeout),
+                    this.client.request({ method, params }),
             )(method, params);
 
             // Ждем результат или отмену
