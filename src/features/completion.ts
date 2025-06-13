@@ -67,14 +67,17 @@ export class DefaultCompletionProvider implements CompletionProvider {
 
         try {
             this.logger.trace('Sending textDocumentCompletion request');
-            const result = await client.textDocumentCompletion({
-                textDocument: { uri },
-                position,
-                context: {
-                    triggerKind: trigger.triggerKind,
-                    triggerCharacter: trigger.triggerCharacter,
+            const result = await client.textDocumentCompletion(
+                {
+                    textDocument: { uri },
+                    position,
+                    context: {
+                        triggerKind: trigger.triggerKind,
+                        triggerCharacter: trigger.triggerCharacter,
+                    },
                 },
-            }, abortSignal);
+                abortSignal,
+            );
 
             this.logger.debug('Completion response received', {
                 hasResult: !!result,
@@ -106,7 +109,10 @@ export class DefaultCompletionProvider implements CompletionProvider {
                 ),
             };
         } catch (error) {
-            if (error instanceof Error && error.message === 'Request was aborted') {
+            if (
+                error instanceof Error &&
+                error.message === 'Request was aborted'
+            ) {
                 this.logger.debug('Completion request was aborted');
                 return null;
             }

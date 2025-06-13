@@ -12,22 +12,26 @@
 ## Ключевые компоненты
 
 ### RequestCancellation класс
+
 - Управляет жизненным циклом запросов
 - Автоматически отправляет `$/cancelRequest` уведомления
 - Поддерживает таймауты и множественные AbortSignal
 
 ### Обновленный LanguageServerClient
+
 - Все методы поддерживают AbortSignal
 - Интегрированная система отслеживания запросов
 - Автоматическая очистка ресурсов
 
 ### Утилиты отмены (src/utils/abort.ts)
+
 - `createAbortControllerWithTimeout()` - контроллер с автоотменой
 - `combineAbortSignals()` - объединение нескольких сигналов
 - `withAbortSignal()` - добавление отмены к Promise
 - `createAbortablePromise()` - создание отменяемых операций
 
 ### Обновленные провайдеры
+
 - **HoverProvider** - поддержка отмены hover запросов
 - **CompletionProvider** - отмена автодополнения
 - **DiagnosticsProvider** - остается без изменений (push-based)
@@ -35,7 +39,8 @@
 ## API изменения
 
 ### Новые опции конфигурации
-```typescript
+
+````typescript
 interface LanguageServerOptions {
     abortSignal?: AbortSignal;           // Сигнал для всей сессии (автоматически включает отмену)
     connectionTimeout?: number;          // Таймаут подключения WebSocket
@@ -64,9 +69,10 @@ sendRequest(method, params, timeout?, abortSignal?)
 // Новые методы управления
 cancelRequest(requestId, reason?)
 getPendingRequests()
-```
+````
 
 ### Новые утилиты экспорта
+
 ```typescript
 export {
     RequestCancellation,
@@ -77,8 +83,8 @@ export {
     createAbortablePromise,
     withAbortSignal,
     delay,
-    ErrorCodes
-}
+    ErrorCodes,
+};
 ```
 
 ## Совместимость
@@ -90,6 +96,7 @@ export {
 - **TypeScript**: Полная поддержка типов для всех новых возможностей</edits>
 
 <old_text>
+
 ## Производительность
 
 - Минимальные накладные расходы при отключенной отмене
@@ -99,6 +106,7 @@ export {
 ## Примеры использования
 
 ### Базовая отмена
+
 ```javascript
 const controller = new AbortController();
 const result = await client.textDocumentHover(params, controller.signal);
@@ -106,17 +114,22 @@ controller.abort(); // Отменить запрос
 ```
 
 ### Отмена с таймаутом
+
 ```javascript
 // Создание controller с автоотменой через 5 секунд
 const controller = createAbortControllerWithTimeout(5000);
-const completion = await client.textDocumentCompletion(params, controller.signal);
+const completion = await client.textDocumentCompletion(
+    params,
+    controller.signal,
+);
 
 // Разные таймауты для разных операций
-const hoverController = createAbortControllerWithTimeout(3000);     // Hover быстрый
+const hoverController = createAbortControllerWithTimeout(3000); // Hover быстрый
 const completionController = createAbortControllerWithTimeout(15000); // Completion медленнее
 ```
 
 ### Сессионная отмена
+
 ```javascript
 // Сессия с общим таймаутом 60 секунд
 const sessionController = createAbortControllerWithTimeout(60000);
@@ -135,12 +148,14 @@ window.addEventListener('beforeunload', () => {
 ## Файлы изменений
 
 ### Новые файлы
+
 - `src/client/RequestCancellation.ts` - Система управления отменой
 - `src/utils/abort.ts` - Утилиты для работы с AbortSignal
 - `examples/cancellation-example.js` - Демонстрация возможностей
 - `docs/cancellation.md` - Подробная документация
 
 ### Модифицированные файлы
+
 - `src/client/LanguageServerClient.ts` - Добавлена поддержка отмены
 - `src/plugin/LanguageServerPlugin.ts` - Интеграция с системой отмены
 - `src/features/hover.ts` - Отмена hover запросов
@@ -155,6 +170,7 @@ window.addEventListener('beforeunload', () => {
 ## Тестирование
 
 Для тестирования функциональности отмены используйте:
+
 1. Пример в `examples/cancellation-example.js`
 2. Инструменты разработчика для мониторинга WebSocket трафика
 3. Консольные методы для проверки активных запросов

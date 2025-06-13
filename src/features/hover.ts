@@ -68,10 +68,13 @@ export class DefaultHoverProvider implements HoverProvider {
 
         try {
             this.logger.trace('Sending textDocumentHover request');
-            const result = await client.textDocumentHover({
-                textDocument: { uri },
-                position,
-            }, abortSignal);
+            const result = await client.textDocumentHover(
+                {
+                    textDocument: { uri },
+                    position,
+                },
+                abortSignal,
+            );
 
             this.logger.debug('Hover response received', {
                 hasResult: !!result,
@@ -123,7 +126,10 @@ export class DefaultHoverProvider implements HoverProvider {
                 },
             };
         } catch (error) {
-            if (error instanceof Error && error.message === 'Request was aborted') {
+            if (
+                error instanceof Error &&
+                error.message === 'Request was aborted'
+            ) {
                 this.logger.debug('Hover request was aborted');
                 return null;
             }

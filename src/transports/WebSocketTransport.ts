@@ -16,7 +16,7 @@ export class WebSocketTransport implements Transport {
 
     public connect(abortSignal?: AbortSignal): Promise<void> {
         const signal = abortSignal || this.abortSignal;
-        
+
         return new Promise((resolve, reject) => {
             // Check if already aborted
             if (signal?.aborted) {

@@ -2,10 +2,10 @@
 
 import { EditorState, EditorView } from '@codemirror/basic-setup';
 import { python } from '@codemirror/lang-python';
-import { 
-    languageServer, 
+import {
+    languageServer,
     getLanguageServerClient,
-    createAbortControllerWithTimeout
+    createAbortControllerWithTimeout,
 } from '../src/index.js';
 
 async function createEditor() {
@@ -35,10 +35,10 @@ def calculate(data):
         });
 
         const client = getLanguageServerClient(view);
-        
+
         // Демонстрация отмены операций
         await demonstratecancellation(client);
-        
+
         return view;
     } catch (error) {
         console.error('LSP error:', error);
@@ -48,34 +48,40 @@ def calculate(data):
 
 async function demonstratecancellation(client) {
     console.log('🔄 Demo: Hover with 2 second timeout');
-    
+
     try {
         const hoverController = createAbortControllerWithTimeout(2000);
-        const result = await client.textDocumentHover({
-            textDocument: { uri: 'file:///example.py' },
-            position: { line: 3, character: 4 }
-        }, hoverController.signal);
+        const result = await client.textDocumentHover(
+            {
+                textDocument: { uri: 'file:///example.py' },
+                position: { line: 3, character: 4 },
+            },
+            hoverController.signal,
+        );
         console.log('✅ Hover result:', result ? 'success' : 'no result');
     } catch (error) {
         console.log('❌ Hover cancelled:', error.message);
     }
 
     console.log('🔄 Demo: Completion with manual cancellation');
-    
+
     try {
         const completionController = new AbortController();
-        
+
         // Cancel after 1 second
         setTimeout(() => {
             console.log('⏱️ Cancelling completion...');
             completionController.abort();
         }, 1000);
 
-        const result = await client.textDocumentCompletion({
-            textDocument: { uri: 'file:///example.py' },
-            position: { line: 2, character: 10 }
-        }, completionController.signal);
-        
+        const result = await client.textDocumentCompletion(
+            {
+                textDocument: { uri: 'file:///example.py' },
+                position: { line: 2, character: 10 },
+            },
+            completionController.signal,
+        );
+
         console.log('✅ Completion result:', result?.length || 0, 'items');
     } catch (error) {
         console.log('❌ Completion cancelled:', error.message);
@@ -85,7 +91,7 @@ async function demonstratecancellation(client) {
 // Инициализация
 document.addEventListener('DOMContentLoaded', async () => {
     const view = await createEditor();
-    
+
     // Очистка при закрытии
     window.addEventListener('beforeunload', () => {
         view?.destroy();

@@ -16,8 +16,8 @@ export type {
     HoverProvider,
 } from './features';
 export { client, documentUri, languageId } from './plugin/facets';
-export { 
-    languageServer, 
+export {
+    languageServer,
     languageServerWithTransport,
     getLanguageServerClient,
 } from './plugin/factory';

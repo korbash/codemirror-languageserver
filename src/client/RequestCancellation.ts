@@ -8,8 +8,6 @@ export interface PendingRequest {
     startTime: number;
 }
 
-
-
 export class RequestCancellation {
     private pendingRequests = new Map<string | number, PendingRequest>();
     private requestIdCounter = 0;
@@ -17,7 +15,10 @@ export class RequestCancellation {
     private serverCapabilities: any = null;
 
     constructor(
-        private sendNotification: (method: string, params: any) => Promise<void>
+        private sendNotification: (
+            method: string,
+            params: any,
+        ) => Promise<void>,
     ) {
         this.logger.debug('RequestCancellation initialized');
     }
@@ -27,7 +28,7 @@ export class RequestCancellation {
      */
     public createRequest(
         method: string,
-        abortSignal?: AbortSignal
+        abortSignal?: AbortSignal,
     ): PendingRequest {
         const id = this.generateRequestId();
         const abortController = new AbortController();
@@ -45,11 +46,17 @@ export class RequestCancellation {
         // Если есть внешний AbortSignal, подписываемся на него
         if (abortSignal) {
             if (abortSignal.aborted) {
-                this.logger.debug('External AbortSignal already aborted', { id, method });
+                this.logger.debug('External AbortSignal already aborted', {
+                    id,
+                    method,
+                });
                 abortController.abort();
             } else {
                 const abortHandler = () => {
-                    this.logger.debug('External AbortSignal triggered', { id, method });
+                    this.logger.debug('External AbortSignal triggered', {
+                        id,
+                        method,
+                    });
                     this.cancelRequest(id, 'External cancellation');
                 };
                 abortSignal.addEventListener('abort', abortHandler);
@@ -62,7 +69,7 @@ export class RequestCancellation {
         }
 
         this.pendingRequests.set(id, request);
-        
+
         this.logger.debug('Request registered', {
             id,
             method,
@@ -75,7 +82,10 @@ export class RequestCancellation {
     /**
      * Отменяет запрос по ID
      */
-    public async cancelRequest(id: string | number, reason: string = 'Request cancelled'): Promise<void> {
+    public async cancelRequest(
+        id: string | number,
+        reason: string = 'Request cancelled',
+    ): Promise<void> {
         const request = this.pendingRequests.get(id);
         if (!request) {
             this.logger.debug('Request not found for cancellation', { id });
@@ -97,13 +107,21 @@ export class RequestCancellation {
         // Отправляем LSP уведомление об отмене только если сервер поддерживает это
         if (this.serverSupportsCancellation()) {
             try {
-                await this.sendNotification('$/cancelRequest', { id } as CancelParams);
+                await this.sendNotification('$/cancelRequest', {
+                    id,
+                } as CancelParams);
                 this.logger.debug('Sent $/cancelRequest notification', { id });
             } catch (error) {
-                this.logger.warn('Failed to send cancel notification', { id, error });
+                this.logger.warn('Failed to send cancel notification', {
+                    id,
+                    error,
+                });
             }
         } else {
-            this.logger.debug('Server does not support cancellation, skipping $/cancelRequest', { id });
+            this.logger.debug(
+                'Server does not support cancellation, skipping $/cancelRequest',
+                { id },
+            );
         }
 
         this.cleanupRequest(id);
@@ -132,18 +150,24 @@ export class RequestCancellation {
     /**
      * Отменяет все активные запросы
      */
-    public async cancelAllRequests(reason: string = 'Bulk cancellation'): Promise<void> {
+    public async cancelAllRequests(
+        reason: string = 'Bulk cancellation',
+    ): Promise<void> {
         const requestIds = Array.from(this.pendingRequests.keys());
-        
+
         this.logger.debug('Cancelling all requests', {
             count: requestIds.length,
             reason,
         });
 
-        const cancelPromises = requestIds.map(id => this.cancelRequest(id, reason));
+        const cancelPromises = requestIds.map((id) =>
+            this.cancelRequest(id, reason),
+        );
         await Promise.allSettled(cancelPromises);
 
-        this.logger.debug('All requests cancelled', { count: requestIds.length });
+        this.logger.debug('All requests cancelled', {
+            count: requestIds.length,
+        });
     }
 
     /**
@@ -174,7 +198,7 @@ export class RequestCancellation {
      */
     public static isCancellationError(error: any): boolean {
         if (!error) return false;
-        
+
         // Проверяем LSP код ошибки
         if (error.code === ErrorCodes.RequestCancelled) {
             return true;
@@ -182,15 +206,19 @@ export class RequestCancellation {
 
         // Проверяем сообщение об ошибке
         const message = error.message || error.toString();
-        return message.includes('cancelled') || 
-               message.includes('aborted') || 
-               message.includes('Request was aborted');
+        return (
+            message.includes('cancelled') ||
+            message.includes('aborted') ||
+            message.includes('Request was aborted')
+        );
     }
 
     /**
      * Создает ошибку отмены запроса
      */
-    public static createCancellationError(message: string = 'Request was cancelled'): Error {
+    public static createCancellationError(
+        message: string = 'Request was cancelled',
+    ): Error {
         const error = new Error(message) as any;
         error.code = ErrorCodes.RequestCancelled;
         return error;

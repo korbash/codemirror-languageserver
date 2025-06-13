@@ -31,7 +31,8 @@ export async function languageServer<TInitOptions = unknown>(
 export async function languageServerWithTransport<TInitOptions = unknown>(
     options: LanguageServerOptions<TInitOptions>,
 ) {
-    const lspClient = options.client || 
+    const lspClient =
+        options.client ||
         new LanguageServerClient<TInitOptions>({
             ...options,
             autoClose: true,
@@ -104,7 +105,9 @@ export async function languageServerWithTransport<TInitOptions = unknown>(
     ];
 }
 
-export function getLanguageServerClient(view: EditorView): LanguageServerClient | null {
+export function getLanguageServerClient(
+    view: EditorView,
+): LanguageServerClient | null {
     try {
         return view.state.facet(client);
     } catch {

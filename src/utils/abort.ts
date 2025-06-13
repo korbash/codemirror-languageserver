@@ -5,9 +5,11 @@ const logger = createLogger('UTILS');
 /**
  * Создает AbortController с автоматическим таймаутом
  */
-export function createAbortControllerWithTimeout(timeoutMs: number): AbortController {
+export function createAbortControllerWithTimeout(
+    timeoutMs: number,
+): AbortController {
     const controller = new AbortController();
-    
+
     const timeoutId = setTimeout(() => {
         logger.debug('AbortController timeout triggered', { timeoutMs });
         controller.abort();
@@ -25,20 +27,24 @@ export function createAbortControllerWithTimeout(timeoutMs: number): AbortContro
  * Объединяет несколько AbortSignal в один
  * Возвращает signal, который срабатывает при отмене любого из входных signals
  */
-export function combineAbortSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
-    const validSignals = signals.filter((signal): signal is AbortSignal => !!signal);
-    
+export function combineAbortSignals(
+    ...signals: (AbortSignal | undefined)[]
+): AbortSignal {
+    const validSignals = signals.filter(
+        (signal): signal is AbortSignal => !!signal,
+    );
+
     if (validSignals.length === 0) {
         // Возвращаем signal, который никогда не отменяется
         return new AbortController().signal;
     }
-    
+
     if (validSignals.length === 1) {
         return validSignals[0];
     }
 
     // Проверяем, если какой-то signal уже отменен
-    const abortedSignal = validSignals.find(signal => signal.aborted);
+    const abortedSignal = validSignals.find((signal) => signal.aborted);
     if (abortedSignal) {
         const controller = new AbortController();
         controller.abort();
@@ -46,20 +52,20 @@ export function combineAbortSignals(...signals: (AbortSignal | undefined)[]): Ab
     }
 
     const controller = new AbortController();
-    
+
     const abortHandler = () => {
         logger.debug('Combined AbortSignal triggered');
         controller.abort();
     };
 
     // Подписываемся на все signals
-    validSignals.forEach(signal => {
+    validSignals.forEach((signal) => {
         signal.addEventListener('abort', abortHandler);
     });
 
     // Очищаем обработчики при отмене
     controller.signal.addEventListener('abort', () => {
-        validSignals.forEach(signal => {
+        validSignals.forEach((signal) => {
             signal.removeEventListener('abort', abortHandler);
         });
     });
@@ -70,9 +76,11 @@ export function combineAbortSignals(...signals: (AbortSignal | undefined)[]): Ab
 /**
  * Создает AbortSignal, который отменяется при разрешении Promise
  */
-export function createAbortSignalFromPromise<T>(promise: Promise<T>): AbortSignal {
+export function createAbortSignalFromPromise<T>(
+    promise: Promise<T>,
+): AbortSignal {
     const controller = new AbortController();
-    
+
     promise
         .then(() => {
             logger.debug('Promise resolved, aborting signal');
@@ -96,7 +104,10 @@ export function isAborted(signal?: AbortSignal): boolean {
 /**
  * Бросает ошибку, если AbortSignal отменен
  */
-export function throwIfAborted(signal?: AbortSignal, message: string = 'Operation was aborted'): void {
+export function throwIfAborted(
+    signal?: AbortSignal,
+    message: string = 'Operation was aborted',
+): void {
     if (isAborted(signal)) {
         throw new Error(message);
     }
@@ -106,8 +117,11 @@ export function throwIfAborted(signal?: AbortSignal, message: string = 'Operatio
  * Создает Promise, который отклоняется при отмене AbortSignal
  */
 export function createAbortablePromise<T>(
-    executor: (resolve: (value: T) => void, reject: (reason?: any) => void) => void,
-    signal?: AbortSignal
+    executor: (
+        resolve: (value: T) => void,
+        reject: (reason?: any) => void,
+    ) => void,
+    signal?: AbortSignal,
 ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
         // Проверяем начальное состояние
@@ -162,7 +176,10 @@ export function createAbortablePromise<T>(
 /**
  * Добавляет поддержку AbortSignal к существующему Promise
  */
-export function withAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+export function withAbortSignal<T>(
+    promise: Promise<T>,
+    signal?: AbortSignal,
+): Promise<T> {
     if (!signal) {
         return promise;
     }
@@ -207,7 +224,7 @@ export function withAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal): P
 export function delay(ms: number, signal?: AbortSignal): Promise<void> {
     return createAbortablePromise<void>((resolve) => {
         const timeoutId = setTimeout(resolve, ms);
-        
+
         if (signal) {
             signal.addEventListener('abort', () => {
                 clearTimeout(timeoutId);

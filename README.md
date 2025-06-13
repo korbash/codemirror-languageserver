@@ -62,7 +62,7 @@ async function createEditor() {
         });
     } catch (error) {
         console.error('LSP failed:', error);
-        
+
         return new EditorView({
             state: EditorState.create({
                 extensions: [python()],
@@ -80,19 +80,26 @@ The library supports cancelling long-running LSP operations using both the stand
 ### Basic Cancellation
 
 ```js
-import { getLanguageServerClient, createAbortControllerWithTimeout } from 'codemirror-languageserver';
+import {
+    getLanguageServerClient,
+    createAbortControllerWithTimeout,
+} from 'codemirror-languageserver';
 
 const client = getLanguageServerClient(view);
 
 // Cancel with timeout
 const controller = createAbortControllerWithTimeout(5000);
 try {
-    const result = await client.textDocumentHover({
-        textDocument: { uri: 'file:///script.py' },
-        position: { line: 5, character: 10 }
-    }, controller.signal);
+    const result = await client.textDocumentHover(
+        {
+            textDocument: { uri: 'file:///script.py' },
+            position: { line: 5, character: 10 },
+        },
+        controller.signal,
+    );
 } catch (error) {
-    if (error.code === -32800) { // RequestCancelled
+    if (error.code === -32800) {
+        // RequestCancelled
         console.log('Request was cancelled');
     }
 }
@@ -101,10 +108,13 @@ try {
 const manualController = new AbortController();
 setTimeout(() => manualController.abort(), 2000);
 
-const completion = await client.textDocumentCompletion({
-    textDocument: { uri: 'file:///script.py' },
-    position: { line: 10, character: 0 }
-}, manualController.signal);
+const completion = await client.textDocumentCompletion(
+    {
+        textDocument: { uri: 'file:///script.py' },
+        position: { line: 10, character: 0 },
+    },
+    manualController.signal,
+);
 ```
 
 ### Session-wide Cancellation
@@ -153,6 +163,7 @@ for (const [id] of pendingRequests) {
 Returns Promise that resolves when LSP is fully initialized.
 
 **Options:**
+
 - `abortSignal?: AbortSignal` - Signal to cancel the entire LSP session
 
 ### `languageServerWithTransport(options)`
@@ -171,14 +182,15 @@ if (client && client.ready) {
     // Send request with cancellation support
     const controller = createAbortControllerWithTimeout(10000);
     const symbols = await client.sendRequest(
-        'textDocument/documentSymbol', 
-        params, 
-        controller.signal
+        'textDocument/documentSymbol',
+        params,
+        controller.signal,
     );
 }
 ```
 
 **Client Methods:**
+
 - `textDocumentHover(params, abortSignal?)`
 - `textDocumentCompletion(params, abortSignal?)`
 - `sendRequest(method, params, abortSignal?)`
@@ -188,10 +200,10 @@ if (client && client.ready) {
 ## Cancellation Utilities
 
 ```js
-import { 
+import {
     createAbortControllerWithTimeout,
     combineAbortSignals,
-    RequestCancellation 
+    RequestCancellation,
 } from 'codemirror-languageserver';
 
 // Auto-cancel after timeout
@@ -206,10 +218,14 @@ if (RequestCancellation.isCancellationError(error)) {
 }
 
 // Different timeouts for different operations
-const hoverResult = await client.textDocumentHover(params, 
-    createAbortControllerWithTimeout(3000).signal);
-const completion = await client.textDocumentCompletion(params, 
-    createAbortControllerWithTimeout(10000).signal);
+const hoverResult = await client.textDocumentHover(
+    params,
+    createAbortControllerWithTimeout(3000).signal,
+);
+const completion = await client.textDocumentCompletion(
+    params,
+    createAbortControllerWithTimeout(10000).signal,
+);
 ```
 
 ## Logging

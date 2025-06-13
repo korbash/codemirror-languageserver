@@ -12,7 +12,10 @@ import {
     logAsyncMethodCall,
     logMethodCall,
 } from '../utils/logger';
-import { createAbortControllerWithTimeout, combineAbortSignals } from '../utils/abort';
+import {
+    createAbortControllerWithTimeout,
+    combineAbortSignals,
+} from '../utils/abort';
 import { RequestCancellation } from './RequestCancellation';
 
 const timeout = 10000;
@@ -56,8 +59,8 @@ export class LanguageServerClient<TInitOptions = unknown> {
         this.client = new Client(this.requestManager);
 
         // Инициализируем систему отмены запросов
-        this.requestCancellation = new RequestCancellation(
-            (method, params) => this.sendNotification(method, params)
+        this.requestCancellation = new RequestCancellation((method, params) =>
+            this.sendNotification(method, params),
         );
 
         this.client.onNotification((data) => {
@@ -224,7 +227,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
 
     public async initialize(abortSignal?: AbortSignal): Promise<void> {
         const signal = abortSignal || this.abortSignal || undefined;
-        
+
         // Check if already aborted
         if (signal?.aborted) {
             throw new Error('Initialization was aborted');
@@ -260,7 +263,9 @@ export class LanguageServerClient<TInitOptions = unknown> {
             this.logger.info('Server capabilities set:', this.capabilities);
 
             // Обновляем capabilities в системе отмены запросов
-            this.requestCancellation.updateServerCapabilities(this.capabilities);
+            this.requestCancellation.updateServerCapabilities(
+                this.capabilities,
+            );
 
             this.ready = true;
             this.logger.info('Client marked as ready');
@@ -277,10 +282,10 @@ export class LanguageServerClient<TInitOptions = unknown> {
 
     public close(): void {
         this.logger.info('Closing LanguageServerClient');
-        
+
         // Отменяем все активные запросы
         this.requestCancellation.dispose();
-        
+
         if (this.transport && typeof this.transport.close === 'function') {
             this.logger.debug('Closing transport connection');
             this.transport.close();
@@ -309,21 +314,35 @@ export class LanguageServerClient<TInitOptions = unknown> {
         return this.notify('textDocument/didChange', params);
     }
 
-    public async textDocumentHover(params: LSP.HoverParams, abortSignal?: AbortSignal) {
+    public async textDocumentHover(
+        params: LSP.HoverParams,
+        abortSignal?: AbortSignal,
+    ) {
         this.logger.debug('textDocumentHover called', {
             uri: params.textDocument.uri,
             position: params.position,
         });
-        return await this.requestWithCancellation('textDocument/hover', params, abortSignal);
+        return await this.requestWithCancellation(
+            'textDocument/hover',
+            params,
+            abortSignal,
+        );
     }
 
-    public async textDocumentCompletion(params: LSP.CompletionParams, abortSignal?: AbortSignal) {
+    public async textDocumentCompletion(
+        params: LSP.CompletionParams,
+        abortSignal?: AbortSignal,
+    ) {
         this.logger.debug('textDocumentCompletion called', {
             uri: params.textDocument.uri,
             position: params.position,
             context: params.context,
         });
-        return await this.requestWithCancellation('textDocument/completion', params, abortSignal);
+        return await this.requestWithCancellation(
+            'textDocument/completion',
+            params,
+            abortSignal,
+        );
     }
 
     public attachPlugin(plugin: any) {
@@ -434,13 +453,13 @@ export class LanguageServerClient<TInitOptions = unknown> {
         abortSignal?: AbortSignal,
     ): Promise<T> {
         this.logger.debug('requestWithCancellation called', { method });
-        
+
         const signal = abortSignal || this.abortSignal || undefined;
-        
+
         // Создаем отменяемый запрос
         const pendingRequest = this.requestCancellation.createRequest(
             method,
-            signal
+            signal,
         );
 
         try {
@@ -449,10 +468,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
                 this.logger,
                 `requestWithCancellation(${method})`,
                 (method: string, params?: any) =>
-                    this.client.request(
-                        { method, params },
-                        timeout,
-                    ),
+                    this.client.request({ method, params }, timeout),
             )(method, params);
 
             // Ждем результат или отмену
@@ -466,20 +482,29 @@ export class LanguageServerClient<TInitOptions = unknown> {
                     }
                 };
 
-                pendingRequest.abortController.signal.addEventListener('abort', abortHandler);
+                pendingRequest.abortController.signal.addEventListener(
+                    'abort',
+                    abortHandler,
+                );
 
                 requestPromise
                     .then((value) => {
                         if (!isResolved) {
                             isResolved = true;
-                            pendingRequest.abortController.signal.removeEventListener('abort', abortHandler);
+                            pendingRequest.abortController.signal.removeEventListener(
+                                'abort',
+                                abortHandler,
+                            );
                             resolve(value);
                         }
                     })
                     .catch((error) => {
                         if (!isResolved) {
                             isResolved = true;
-                            pendingRequest.abortController.signal.removeEventListener('abort', abortHandler);
+                            pendingRequest.abortController.signal.removeEventListener(
+                                'abort',
+                                abortHandler,
+                            );
                             reject(error);
                         }
                     });
@@ -487,16 +512,22 @@ export class LanguageServerClient<TInitOptions = unknown> {
 
             this.requestCancellation.completeRequest(pendingRequest.id, true);
             return result;
-
         } catch (error) {
             this.requestCancellation.completeRequest(pendingRequest.id, false);
-            
+
             if (RequestCancellation.isCancellationError(error)) {
-                this.logger.debug('Request was cancelled', { method, id: pendingRequest.id });
+                this.logger.debug('Request was cancelled', {
+                    method,
+                    id: pendingRequest.id,
+                });
             } else {
-                this.logger.error('Request failed', { method, id: pendingRequest.id, error });
+                this.logger.error('Request failed', {
+                    method,
+                    id: pendingRequest.id,
+                    error,
+                });
             }
-            
+
             throw error;
         }
     }
@@ -504,7 +535,10 @@ export class LanguageServerClient<TInitOptions = unknown> {
     /**
      * Отменяет активный запрос по ID
      */
-    public cancelRequest(requestId: string | number, reason?: string): Promise<void> {
+    public cancelRequest(
+        requestId: string | number,
+        reason?: string,
+    ): Promise<void> {
         return this.requestCancellation.cancelRequest(requestId, reason);
     }
 

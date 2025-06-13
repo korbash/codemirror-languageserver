@@ -5,7 +5,10 @@
 ## Основное использование
 
 ```javascript
-import { languageServer, createAbortControllerWithTimeout } from 'codemirror-languageserver';
+import {
+    languageServer,
+    createAbortControllerWithTimeout,
+} from 'codemirror-languageserver';
 
 // Создание LSP расширения с отменой через 5 минут
 const sessionController = createAbortControllerWithTimeout(300000);
@@ -17,6 +20,7 @@ const lspExtension = await languageServer({
     abortSignal: sessionController.signal,
 });
 ```
+
 ### Отмена с таймаутом
 
 ```javascript
@@ -25,10 +29,13 @@ import { createAbortControllerWithTimeout } from 'codemirror-languageserver';
 // Создание controller с автоотменой через 5 секунд
 const controller = createAbortControllerWithTimeout(5000);
 
-const completion = await client.textDocumentCompletion({
-    textDocument: { uri: 'file:///example.py' },
-    position: { line: 10, character: 0 }
-}, controller.signal);
+const completion = await client.textDocumentCompletion(
+    {
+        textDocument: { uri: 'file:///example.py' },
+        position: { line: 10, character: 0 },
+    },
+    controller.signal,
+);
 ```
 
 ## Отмена операций
@@ -37,16 +44,24 @@ const completion = await client.textDocumentCompletion({
 const client = getLanguageServerClient(view);
 
 // Разные таймауты для разных операций
-const hoverResult = await client.textDocumentHover(params, 
-    createAbortControllerWithTimeout(3000).signal);
+const hoverResult = await client.textDocumentHover(
+    params,
+    createAbortControllerWithTimeout(3000).signal,
+);
 
-const completionResult = await client.textDocumentCompletion(params, 
-    createAbortControllerWithTimeout(10000).signal);
+const completionResult = await client.textDocumentCompletion(
+    params,
+    createAbortControllerWithTimeout(10000).signal,
+);
 
 // Ручная отмена
 const controller = new AbortController();
 setTimeout(() => controller.abort(), 5000);
-const result = await client.sendRequest('custom/method', params, controller.signal);
+const result = await client.sendRequest(
+    'custom/method',
+    params,
+    controller.signal,
+);
 ```
 
 ## Обработка ошибок
@@ -72,7 +87,10 @@ import { combineAbortSignals } from 'codemirror-languageserver';
 const userController = new AbortController();
 const timeoutController = createAbortControllerWithTimeout(30000);
 
-const combined = combineAbortSignals(userController.signal, timeoutController.signal);
+const combined = combineAbortSignals(
+    userController.signal,
+    timeoutController.signal,
+);
 const result = await client.textDocumentHover(params, combined);
 ```
 
@@ -83,16 +101,19 @@ class HoverProvider {
     constructor() {
         this.currentController = null;
     }
-    
+
     async provideHover(params) {
         // Отменяем предыдущий запрос
         this.currentController?.abort();
-        
+
         // Создаем новый с таймаутом
         this.currentController = createAbortControllerWithTimeout(3000);
-        
+
         try {
-            const result = await client.textDocumentHover(params, this.currentController.signal);
+            const result = await client.textDocumentHover(
+                params,
+                this.currentController.signal,
+            );
             return result;
         } finally {
             this.currentController = null;
@@ -104,13 +125,14 @@ class HoverProvider {
 ## API
 
 ### Методы клиента
+
 - `textDocumentHover(params, abortSignal?)`
 - `textDocumentCompletion(params, abortSignal?)`
 - `sendRequest(method, params, abortSignal?)`
 
 ### Утилиты
+
 - `createAbortControllerWithTimeout(ms)` - автоотмена через таймаут
 - `combineAbortSignals(...signals)` - объединение сигналов
 - `RequestCancellation.isCancellationError(error)` - проверка отмены
-</edits>
-
+  </edits>
