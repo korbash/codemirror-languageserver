@@ -11,6 +11,7 @@ export interface HoverProvider {
         client: LanguageServerClient,
         view: EditorView,
         position: LSP.Position,
+        abortSignal?: AbortSignal,
     ): Promise<{
         pos: number;
         end?: number;
@@ -39,6 +40,7 @@ export class DefaultHoverProvider implements HoverProvider {
         client: LanguageServerClient,
         view: EditorView,
         position: LSP.Position,
+        abortSignal?: AbortSignal,
     ): Promise<{
         pos: number;
         end?: number;
@@ -50,7 +52,14 @@ export class DefaultHoverProvider implements HoverProvider {
             uri,
             position,
             allowHTMLContent: this.allowHTMLContent,
+            hasAbortSignal: !!abortSignal,
         });
+
+        // Check if already aborted
+        if (abortSignal?.aborted) {
+            this.logger.debug('Hover request aborted before execution');
+            return null;
+        }
 
         if (!this.isSupported(client.capabilities)) {
             this.logger.debug('Hover not supported, returning null');
@@ -62,7 +71,7 @@ export class DefaultHoverProvider implements HoverProvider {
             const result = await client.textDocumentHover({
                 textDocument: { uri },
                 position,
-            });
+            }, abortSignal);
 
             this.logger.debug('Hover response received', {
                 hasResult: !!result,
@@ -114,6 +123,10 @@ export class DefaultHoverProvider implements HoverProvider {
                 },
             };
         } catch (error) {
+            if (error instanceof Error && error.message === 'Request was aborted') {
+                this.logger.debug('Hover request was aborted');
+                return null;
+            }
             this.logger.error('Hover request failed:', error);
             return null;
         }

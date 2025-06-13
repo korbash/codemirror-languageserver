@@ -26,6 +26,7 @@ export interface LanguageServerPluginOptions {
     hoverProvider?: HoverProvider;
     completionProvider?: CompletionProvider;
     diagnosticsProvider?: DiagnosticsProvider;
+    abortSignal?: AbortSignal;
 }
 
 export class LanguageServerPlugin implements PluginValue {
@@ -36,6 +37,7 @@ export class LanguageServerPlugin implements PluginValue {
     private documentVersion: number;
     private changesTimeout: number;
     private logger = createLogger('PLUGIN');
+    private abortSignal: AbortSignal | null = null;
 
     private hoverProvider: HoverProvider;
     private completionProvider: CompletionProvider;
@@ -60,11 +62,13 @@ export class LanguageServerPlugin implements PluginValue {
         this.languageId = this.view.state.facet(languageId);
         this.documentVersion = 0;
         this.changesTimeout = 0;
+        this.abortSignal = options.abortSignal || null;
 
         this.logger.debug('Plugin configuration', {
             documentUri: this.documentUri,
             languageId: this.languageId,
             clientReady: this.client.ready,
+            hasAbortSignal: !!this.abortSignal,
         });
 
         // Initialize feature providers
@@ -123,6 +127,11 @@ export class LanguageServerPlugin implements PluginValue {
     }
 
     public async initialize(options: { documentText: string }) {
+        // Check if already aborted
+        if (this.abortSignal?.aborted) {
+            throw new Error('Plugin initialization was aborted');
+        }
+
         this.logger.info('Initializing plugin', {
             documentLength: options.documentText.length,
             documentUri: this.documentUri,
@@ -132,6 +141,12 @@ export class LanguageServerPlugin implements PluginValue {
         try {
             this.logger.debug('Waiting for client initialization...');
             await this.client.initializePromise;
+            
+            // Check if aborted after client initialization
+            if (this.abortSignal?.aborted) {
+                throw new Error('Plugin initialization was aborted');
+            }
+            
             this.logger.info('Client initialization completed');
 
             this.logger.debug('Sending textDocument/didOpen notification');
@@ -185,7 +200,15 @@ export class LanguageServerPlugin implements PluginValue {
         return;
     }
 
-    public async requestHoverTooltip(view: EditorView, pos: LSP.Position) {
+    public async requestHoverTooltip(view: EditorView, pos: LSP.Position, abortSignal?: AbortSignal) {
+        const signal = abortSignal || this.abortSignal || undefined;
+        
+        // Check if already aborted
+        if (signal?.aborted) {
+            this.logger.debug('Hover request aborted before execution');
+            return null;
+        }
+
         this.logger.debug('requestHoverTooltip called', {
             position: pos,
             documentUri: this.documentUri,
@@ -193,6 +216,12 @@ export class LanguageServerPlugin implements PluginValue {
 
         try {
             await this.client.initializePromise;
+
+            // Check if aborted after client initialization
+            if (signal?.aborted) {
+                this.logger.debug('Hover request aborted after client initialization');
+                return null;
+            }
 
             if (!this.hoverProvider.isSupported(this.client.capabilities)) {
                 this.logger.debug('Hover not supported by server capabilities');
@@ -204,12 +233,17 @@ export class LanguageServerPlugin implements PluginValue {
                 this.client,
                 view,
                 pos,
+                signal,
             );
             this.logger.debug('Hover request completed', {
                 hasResult: !!result,
             });
             return result;
         } catch (error) {
+            if (error instanceof Error && error.message === 'Request was aborted') {
+                this.logger.debug('Hover request was aborted');
+                return null;
+            }
             this.logger.error('Hover request failed:', error);
             return null;
         }
@@ -222,7 +256,16 @@ export class LanguageServerPlugin implements PluginValue {
             triggerKind: LSP.CompletionTriggerKind;
             triggerCharacter?: string;
         },
+        abortSignal?: AbortSignal,
     ) {
+        const signal = abortSignal || this.abortSignal || undefined;
+        
+        // Check if already aborted
+        if (signal?.aborted) {
+            this.logger.debug('Completion request aborted before execution');
+            return null;
+        }
+
         this.logger.debug('requestCompletion called', {
             position: pos,
             triggerKind: trigger.triggerKind,
@@ -232,6 +275,12 @@ export class LanguageServerPlugin implements PluginValue {
 
         try {
             await this.client.initializePromise;
+
+            // Check if aborted after client initialization
+            if (signal?.aborted) {
+                this.logger.debug('Completion request aborted after client initialization');
+                return null;
+            }
 
             if (
                 !this.completionProvider.isSupported(this.client.capabilities)
@@ -251,6 +300,7 @@ export class LanguageServerPlugin implements PluginValue {
                     triggerKind: trigger.triggerKind,
                     triggerCharacter: trigger.triggerCharacter,
                 },
+                signal,
             );
             this.logger.debug('Completion request completed', {
                 hasResult: !!result,
@@ -258,6 +308,10 @@ export class LanguageServerPlugin implements PluginValue {
             });
             return result;
         } catch (error) {
+            if (error instanceof Error && error.message === 'Request was aborted') {
+                this.logger.debug('Completion request was aborted');
+                return null;
+            }
             this.logger.error('Completion request failed:', error);
             return null;
         }

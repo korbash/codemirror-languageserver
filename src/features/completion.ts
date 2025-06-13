@@ -15,6 +15,7 @@ export interface CompletionProvider {
             triggerKind: LSP.CompletionTriggerKind;
             triggerCharacter?: string;
         },
+        abortSignal?: AbortSignal,
     ): Promise<CompletionResult | null>;
 }
 
@@ -42,6 +43,7 @@ export class DefaultCompletionProvider implements CompletionProvider {
             triggerKind: LSP.CompletionTriggerKind;
             triggerCharacter?: string;
         },
+        abortSignal?: AbortSignal,
     ): Promise<CompletionResult | null> {
         const uri = context.state.facet(documentUri);
         this.logger.debug('provideCompletion called', {
@@ -49,7 +51,14 @@ export class DefaultCompletionProvider implements CompletionProvider {
             position,
             triggerKind: trigger.triggerKind,
             triggerCharacter: trigger.triggerCharacter,
+            hasAbortSignal: !!abortSignal,
         });
+
+        // Check if already aborted
+        if (abortSignal?.aborted) {
+            this.logger.debug('Completion request aborted before execution');
+            return null;
+        }
 
         if (!this.isSupported(client.capabilities)) {
             this.logger.debug('Completion not supported, returning null');
@@ -65,7 +74,7 @@ export class DefaultCompletionProvider implements CompletionProvider {
                     triggerKind: trigger.triggerKind,
                     triggerCharacter: trigger.triggerCharacter,
                 },
-            });
+            }, abortSignal);
 
             this.logger.debug('Completion response received', {
                 hasResult: !!result,
@@ -92,11 +101,15 @@ export class DefaultCompletionProvider implements CompletionProvider {
 
             return {
                 from: completionStart,
-                options: items.map((item) =>
+                options: items.map((item: LSP.CompletionItem) =>
                     this.convertCompletionItem(item, context),
                 ),
             };
         } catch (error) {
+            if (error instanceof Error && error.message === 'Request was aborted') {
+                this.logger.debug('Completion request was aborted');
+                return null;
+            }
             this.logger.error('Completion request failed:', error);
             return null;
         }

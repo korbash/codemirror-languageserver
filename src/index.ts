@@ -2,6 +2,7 @@
 // Export transports
 export { WebSocketTransport } from '@open-rpc/client-js';
 export { LanguageServerClient } from './client/LanguageServerClient';
+export { RequestCancellation } from './client/RequestCancellation';
 export {
     createDiagnosticsProvider,
     DefaultCompletionProvider,
@@ -25,6 +26,7 @@ export { LanguageServerPlugin } from './plugin/LanguageServerPlugin';
 export type { LanguageServerPluginOptions } from './plugin/LanguageServerPlugin';
 // Export types for TypeScript users
 export type {
+    CancelParams,
     ClangdInitializationOptions,
     ESLintInitializationOptions,
     GoplsInitializationOptions,
@@ -35,11 +37,13 @@ export type {
     LSPEventMap,
     LSPNotifyMap,
     LSPRequestMap,
+    LSPRequestOptions,
     Notification,
     PyrightInitializationOptions,
     RustAnalyzerInitializationOptions,
     TypeScriptInitializationOptions,
 } from './types/lsp';
+export { ErrorCodes } from './types/lsp';
 export type {
     FetchTransportOptions,
     Transport,
@@ -64,6 +68,15 @@ export {
     logger,
     logMethodCall,
     logAsyncMethodCall,
+    // AbortSignal utilities
+    createAbortControllerWithTimeout,
+    combineAbortSignals,
+    createAbortSignalFromPromise,
+    isAborted,
+    throwIfAborted,
+    createAbortablePromise,
+    withAbortSignal,
+    delay,
 } from './utils';
 // Export logger types
 export type { Logger, LogLevel, ModuleName } from './utils';

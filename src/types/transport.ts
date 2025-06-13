@@ -1,4 +1,5 @@
 export interface Transport {
+    connect?(abortSignal?: AbortSignal): Promise<void>;
     send(payload: string): void;
     onMessage(callback: (message: string) => void): void;
     onClose?(callback: () => void): void;
@@ -7,9 +8,9 @@ export interface Transport {
 }
 
 export interface TransportOptions {
-    timeout?: number;
     reconnectAttempts?: number;
     reconnectDelay?: number;
+    abortSignal?: AbortSignal;
 }
 
 export interface WebSocketTransportOptions extends TransportOptions {

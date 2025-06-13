@@ -12,6 +12,8 @@ import {
     logAsyncMethodCall,
     logMethodCall,
 } from '../utils/logger';
+import { createAbortControllerWithTimeout, combineAbortSignals } from '../utils/abort';
+import { RequestCancellation } from './RequestCancellation';
 
 const timeout = 10000;
 
@@ -31,6 +33,8 @@ export class LanguageServerClient<TInitOptions = unknown> {
     private plugins: any[] = [];
     private options: LanguageServerClientOptions<TInitOptions>;
     private logger = createLogger('CLIENT');
+    private abortSignal: AbortSignal | null = null;
+    private requestCancellation: RequestCancellation;
 
     constructor(options: LanguageServerClientOptions<TInitOptions>) {
         this.logger.info('Creating LanguageServerClient', {
@@ -45,10 +49,16 @@ export class LanguageServerClient<TInitOptions = unknown> {
         this.workspaceFolders = options.workspaceFolders;
         this.autoClose = options.autoClose || false;
         this.transport = options.transport;
+        this.abortSignal = options.abortSignal || null;
 
         this.logger.debug('Creating RequestManager and Client');
         this.requestManager = new RequestManager([this.transport]);
         this.client = new Client(this.requestManager);
+
+        // Инициализируем систему отмены запросов
+        this.requestCancellation = new RequestCancellation(
+            (method, params) => this.sendNotification(method, params)
+        );
 
         this.client.onNotification((data) => {
             this.logger.trace('Received notification:', data);
@@ -109,7 +119,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
         }
 
         this.logger.debug('Starting initialization');
-        this.initializePromise = this.initialize();
+        this.initializePromise = this.initialize(this.abortSignal ?? undefined);
     }
 
     protected getInitializationOptions(): LSP.InitializeParams {
@@ -203,31 +213,54 @@ export class LanguageServerClient<TInitOptions = unknown> {
                     configuration: true,
                     workspaceFolders: true,
                 },
+                window: {
+                    workDoneProgress: true,
+                },
             },
             trace: 'off',
             workspaceFolders: this.workspaceFolders,
         };
     }
 
-    public async initialize(): Promise<void> {
+    public async initialize(abortSignal?: AbortSignal): Promise<void> {
+        const signal = abortSignal || this.abortSignal || undefined;
+        
+        // Check if already aborted
+        if (signal?.aborted) {
+            throw new Error('Initialization was aborted');
+        }
+
         this.logger.info('Starting LSP server initialization');
 
         try {
+            // Check abort signal before proceeding
+            if (signal?.aborted) {
+                throw new Error('Initialization was aborted');
+            }
+
             const params = this.getInitializationOptions();
             this.logger.debug(
                 'Sending initialize request with params:',
                 params,
             );
 
-            const initializeResult = await this.request(
+            const initializeResult = await this.requestWithCancellation(
                 'initialize',
                 params,
-                timeout,
+                signal,
             );
+
+            // Check abort signal after request
+            if (signal?.aborted) {
+                throw new Error('Initialization was aborted');
+            }
 
             this.logger.debug('Initialize result received:', initializeResult);
             this.capabilities = initializeResult.capabilities;
             this.logger.info('Server capabilities set:', this.capabilities);
+
+            // Обновляем capabilities в системе отмены запросов
+            this.requestCancellation.updateServerCapabilities(this.capabilities);
 
             this.ready = true;
             this.logger.info('Client marked as ready');
@@ -244,6 +277,10 @@ export class LanguageServerClient<TInitOptions = unknown> {
 
     public close(): void {
         this.logger.info('Closing LanguageServerClient');
+        
+        // Отменяем все активные запросы
+        this.requestCancellation.dispose();
+        
         if (this.transport && typeof this.transport.close === 'function') {
             this.logger.debug('Closing transport connection');
             this.transport.close();
@@ -272,21 +309,21 @@ export class LanguageServerClient<TInitOptions = unknown> {
         return this.notify('textDocument/didChange', params);
     }
 
-    public async textDocumentHover(params: LSP.HoverParams) {
+    public async textDocumentHover(params: LSP.HoverParams, abortSignal?: AbortSignal) {
         this.logger.debug('textDocumentHover called', {
             uri: params.textDocument.uri,
             position: params.position,
         });
-        return await this.request('textDocument/hover', params, timeout);
+        return await this.requestWithCancellation('textDocument/hover', params, abortSignal);
     }
 
-    public async textDocumentCompletion(params: LSP.CompletionParams) {
+    public async textDocumentCompletion(params: LSP.CompletionParams, abortSignal?: AbortSignal) {
         this.logger.debug('textDocumentCompletion called', {
             uri: params.textDocument.uri,
             position: params.position,
             context: params.context,
         });
-        return await this.request('textDocument/completion', params, timeout);
+        return await this.requestWithCancellation('textDocument/completion', params, abortSignal);
     }
 
     public attachPlugin(plugin: any) {
@@ -325,18 +362,9 @@ export class LanguageServerClient<TInitOptions = unknown> {
     public sendRequest<T = any>(
         method: string,
         params?: any,
-        requestTimeout: number = timeout,
+        abortSignal?: AbortSignal,
     ): Promise<T> {
-        this.logger.debug('sendRequest called', { method, requestTimeout });
-        return logAsyncMethodCall(
-            this.logger,
-            `sendRequest(${method})`,
-            (method: string, params?: any, requestTimeout?: number) =>
-                this.client.request(
-                    { method, params },
-                    requestTimeout || timeout,
-                ),
-        )(method, params, requestTimeout);
+        return this.requestWithCancellation(method, params, abortSignal);
     }
 
     // Public API for any LSP notifications
@@ -354,18 +382,9 @@ export class LanguageServerClient<TInitOptions = unknown> {
     public request<K extends keyof LSPRequestMap>(
         method: K,
         params: LSPRequestMap[K][0],
-        requestTimeout: number = timeout,
+        abortSignal?: AbortSignal,
     ): Promise<LSPRequestMap[K][1]> {
-        this.logger.debug('request called', { method, requestTimeout });
-        return logAsyncMethodCall(
-            this.logger,
-            `request(${method})`,
-            (method: K, params: LSPRequestMap[K][0], requestTimeout?: number) =>
-                this.client.request(
-                    { method, params },
-                    requestTimeout || timeout,
-                ),
-        )(method, params, requestTimeout);
+        return this.requestWithCancellation(method, params, abortSignal);
     }
 
     public notify<K extends keyof LSPNotifyMap>(
@@ -404,5 +423,95 @@ export class LanguageServerClient<TInitOptions = unknown> {
                 }
             }
         }
+    }
+
+    /**
+     * Внутренний метод для выполнения запросов с поддержкой отмены LSP
+     */
+    private async requestWithCancellation<T = any>(
+        method: string,
+        params?: any,
+        abortSignal?: AbortSignal,
+    ): Promise<T> {
+        this.logger.debug('requestWithCancellation called', { method });
+        
+        const signal = abortSignal || this.abortSignal || undefined;
+        
+        // Создаем отменяемый запрос
+        const pendingRequest = this.requestCancellation.createRequest(
+            method,
+            signal
+        );
+
+        try {
+            // Выполняем запрос с отслеживанием
+            const requestPromise = logAsyncMethodCall(
+                this.logger,
+                `requestWithCancellation(${method})`,
+                (method: string, params?: any) =>
+                    this.client.request(
+                        { method, params },
+                        timeout,
+                    ),
+            )(method, params);
+
+            // Ждем результат или отмену
+            const result = await new Promise<T>((resolve, reject) => {
+                let isResolved = false;
+
+                const abortHandler = () => {
+                    if (!isResolved) {
+                        isResolved = true;
+                        reject(RequestCancellation.createCancellationError());
+                    }
+                };
+
+                pendingRequest.abortController.signal.addEventListener('abort', abortHandler);
+
+                requestPromise
+                    .then((value) => {
+                        if (!isResolved) {
+                            isResolved = true;
+                            pendingRequest.abortController.signal.removeEventListener('abort', abortHandler);
+                            resolve(value);
+                        }
+                    })
+                    .catch((error) => {
+                        if (!isResolved) {
+                            isResolved = true;
+                            pendingRequest.abortController.signal.removeEventListener('abort', abortHandler);
+                            reject(error);
+                        }
+                    });
+            });
+
+            this.requestCancellation.completeRequest(pendingRequest.id, true);
+            return result;
+
+        } catch (error) {
+            this.requestCancellation.completeRequest(pendingRequest.id, false);
+            
+            if (RequestCancellation.isCancellationError(error)) {
+                this.logger.debug('Request was cancelled', { method, id: pendingRequest.id });
+            } else {
+                this.logger.error('Request failed', { method, id: pendingRequest.id, error });
+            }
+            
+            throw error;
+        }
+    }
+
+    /**
+     * Отменяет активный запрос по ID
+     */
+    public cancelRequest(requestId: string | number, reason?: string): Promise<void> {
+        return this.requestCancellation.cancelRequest(requestId, reason);
+    }
+
+    /**
+     * Получает информацию об активных запросах
+     */
+    public getPendingRequests() {
+        return this.requestCancellation.getPendingRequests();
     }
 }

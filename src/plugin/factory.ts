@@ -43,6 +43,7 @@ export async function languageServerWithTransport<TInitOptions = unknown>(
 
     const pluginOptions: LanguageServerPluginOptions = {
         allowHTMLContent: options.allowHTMLContent,
+        abortSignal: options.abortSignal,
     };
 
     return [
@@ -57,6 +58,7 @@ export async function languageServerWithTransport<TInitOptions = unknown>(
                 plugin?.requestHoverTooltip(
                     view,
                     offsetToPos(view.state.doc, pos),
+                    options.abortSignal,
                 ) ?? null,
         ),
         autocompletion({
@@ -93,6 +95,7 @@ export async function languageServerWithTransport<TInitOptions = unknown>(
                             triggerCharacter: trigChar,
                             triggerKind: trigKind,
                         },
+                        options.abortSignal,
                     );
                 },
             ],

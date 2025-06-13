@@ -17,3 +17,13 @@ export {
 } from './logger';
 export type { Logger, LogLevel, ModuleName } from './logger';
 export { offsetToPos, posToOffset } from './position';
+export {
+    createAbortControllerWithTimeout,
+    combineAbortSignals,
+    createAbortSignalFromPromise,
+    isAborted,
+    throwIfAborted,
+    createAbortablePromise,
+    withAbortSignal,
+    delay,
+} from './abort';

@@ -10,10 +10,27 @@ export interface LSPRequestMap {
     ];
 }
 
+export interface LSPRequestOptions {
+    timeout?: number;
+    abortSignal?: AbortSignal;
+}
+
+export interface CancelParams {
+    /**
+     * The request id to cancel.
+     */
+    id: number | string;
+}
+
+export const ErrorCodes = {
+    RequestCancelled: -32800,
+} as const;
+
 export interface LSPNotifyMap {
     initialized: LSP.InitializedParams;
     'textDocument/didChange': LSP.DidChangeTextDocumentParams;
     'textDocument/didOpen': LSP.DidOpenTextDocumentParams;
+    '$/cancelRequest': CancelParams;
 }
 
 export interface LSPEventMap {
@@ -34,6 +51,7 @@ export interface LanguageServerBaseOptions {
     workspaceFolders: LSP.WorkspaceFolder[] | null;
     documentUri: string;
     languageId: string;
+    abortSignal?: AbortSignal;
 }
 
 export interface LanguageServerClientOptions<TInitOptions = unknown>

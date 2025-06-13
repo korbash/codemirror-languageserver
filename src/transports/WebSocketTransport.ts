@@ -5,37 +5,43 @@ export class WebSocketTransport implements Transport {
     private messageHandler: ((message: string) => void) | null = null;
     private closeHandler: (() => void) | null = null;
     private errorHandler: ((error: Error) => void) | null = null;
-    private options: WebSocketTransportOptions;
-    private reconnectAttempts = 0;
-    private reconnectTimer: number | null = null;
+    private abortSignal: AbortSignal | null = null;
 
     constructor(
         private url: string,
         options: WebSocketTransportOptions = {},
     ) {
-        this.options = {
-            timeout: 30000,
-            reconnectAttempts: 3,
-            reconnectDelay: 1000,
-            ...options,
-        };
+        this.abortSignal = options.abortSignal || null;
     }
 
-    public connect(): Promise<void> {
+    public connect(abortSignal?: AbortSignal): Promise<void> {
+        const signal = abortSignal || this.abortSignal;
+        
         return new Promise((resolve, reject) => {
-            try {
-                this.ws = new WebSocket(this.url, this.options.protocols);
+            // Check if already aborted
+            if (signal?.aborted) {
+                reject(new Error('Operation was aborted'));
+                return;
+            }
 
-                const timeout = setTimeout(() => {
-                    if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+            try {
+                this.ws = new WebSocket(this.url);
+
+                const abortHandler = () => {
+                    if (this.ws) {
                         this.ws.close();
-                        reject(new Error('WebSocket connection timeout'));
                     }
-                }, this.options.timeout);
+                    reject(new Error('Operation was aborted'));
+                };
+
+                if (signal) {
+                    signal.addEventListener('abort', abortHandler);
+                }
 
                 this.ws.onopen = () => {
-                    clearTimeout(timeout);
-                    this.reconnectAttempts = 0;
+                    if (signal) {
+                        signal.removeEventListener('abort', abortHandler);
+                    }
                     resolve();
                 };
 
@@ -46,15 +52,18 @@ export class WebSocketTransport implements Transport {
                 };
 
                 this.ws.onclose = () => {
-                    clearTimeout(timeout);
+                    if (signal) {
+                        signal.removeEventListener('abort', abortHandler);
+                    }
                     if (this.closeHandler) {
                         this.closeHandler();
                     }
-                    this.attemptReconnect();
                 };
 
                 this.ws.onerror = (event) => {
-                    clearTimeout(timeout);
+                    if (signal) {
+                        signal.removeEventListener('abort', abortHandler);
+                    }
                     const error = new Error('WebSocket error');
                     if (this.errorHandler) {
                         this.errorHandler(error);
@@ -88,25 +97,9 @@ export class WebSocketTransport implements Transport {
     }
 
     public close(): void {
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
-
         if (this.ws) {
             this.ws.close();
             this.ws = null;
-        }
-    }
-
-    private attemptReconnect(): void {
-        if (this.reconnectAttempts < (this.options.reconnectAttempts || 3)) {
-            this.reconnectAttempts++;
-            this.reconnectTimer = window.setTimeout(() => {
-                this.connect().catch(() => {
-                    // Reconnection failed, will try again or give up
-                });
-            }, this.options.reconnectDelay || 1000);
         }
     }
 
