@@ -277,19 +277,19 @@ class HoverProvider {
 
 The library follows these principles for timeout management:
 
-- **No internal timeouts**: The library does not impose any default timeouts
+- **Smart defaults**: The library uses a 10-second default timeout to prevent hanging requests
 - **User-controlled**: All timeout logic is managed through `AbortSignal`
 - **Flexible**: Different operations can have different timeout strategies
 - **Composable**: Multiple signals can be combined using `combineAbortSignals`
 
 ```js
-// If no AbortSignal is provided, operations run until completion or error
-const result = await client.textDocumentHover(params); // No timeout
+// If no AbortSignal is provided, operations use a 10-second default timeout
+const result = await client.textDocumentHover(params); // 10-second timeout
 
-// User controls timeout per operation
+// User controls timeout per operation (overrides default)
 const quickResult = await client.textDocumentHover(
     params,
-    createAbortControllerWithTimeout(1000).signal,
+    createAbortControllerWithTimeout(1000).signal, // 1-second timeout
 );
 
 // Session-wide timeout combined with operation-specific timeout

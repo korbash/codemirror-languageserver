@@ -71,12 +71,8 @@ export {
     // AbortSignal utilities
     createAbortControllerWithTimeout,
     combineAbortSignals,
-    createAbortSignalFromPromise,
     isAborted,
     throwIfAborted,
-    createAbortablePromise,
-    withAbortSignal,
-    delay,
 } from './utils';
 // Export logger types
 export type { Logger, LogLevel, ModuleName } from './utils';

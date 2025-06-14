@@ -8,6 +8,7 @@ import {
     LanguageServerClientOptions,
 } from '../types/lsp';
 import { createLogger, logAsyncMethodCall } from '../utils/logger';
+import { createAbortControllerWithTimeout } from '../utils/abort';
 import { RequestCancellation } from './RequestCancellation';
 
 export class LanguageServerClient<TInitOptions = unknown> {
@@ -444,7 +445,19 @@ export class LanguageServerClient<TInitOptions = unknown> {
     ): Promise<T> {
         this.logger.debug('requestWithCancellation called', { method });
 
-        const signal = abortSignal || this.abortSignal || undefined;
+        // Если не передан abortSignal и нет this.abortSignal, создаем дефолтный timeout 10 сек
+        let signal: AbortSignal | undefined;
+        if (abortSignal) {
+            signal = abortSignal;
+        } else if (this.abortSignal) {
+            signal = this.abortSignal;
+        } else {
+            // Создаем дефолтный timeout 10 секунд
+            signal = createAbortControllerWithTimeout(10000).signal;
+            this.logger.debug('Created default timeout signal', {
+                timeoutMs: 10000,
+            });
+        }
 
         // Создаем отменяемый запрос
         const pendingRequest = this.requestCancellation.createRequest(
@@ -458,7 +471,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
                 this.logger,
                 `requestWithCancellation(${method})`,
                 (method: string, params?: any) =>
-                    this.client.request({ method, params }),
+                    this.client.request({ method, params }, null as any),
             )(method, params);
 
             // Ждем результат или отмену

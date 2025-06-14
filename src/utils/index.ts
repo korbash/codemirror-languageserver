@@ -20,10 +20,6 @@ export { offsetToPos, posToOffset } from './position';
 export {
     createAbortControllerWithTimeout,
     combineAbortSignals,
-    createAbortSignalFromPromise,
     isAborted,
     throwIfAborted,
-    createAbortablePromise,
-    withAbortSignal,
-    delay,
 } from './abort';
