@@ -19,6 +19,8 @@ const MODULE_PREFIXES = {
     CLIENT: '[LSP-Client]',
     PLUGIN: '[LSP-Plugin]',
     TRANSPORT: '[Transport]',
+    LSP_TRANSPORT: '[LSP-Transport]',
+    REQUEST_MANAGER: '[RequestManager]',
     COMPLETION: '[Completion]',
     HOVER: '[Hover]',
     DIAGNOSTICS: '[Diagnostics]',

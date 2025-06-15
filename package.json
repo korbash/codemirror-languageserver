@@ -19,7 +19,14 @@
         "clean": "rm -rf dist",
         "build": "tsc --project tsconfig.json",
         "format": "prettier --write .",
-        "prepare": "npm run build"
+        "prepare": "npm run build",
+        "test": "npm run build && node dist/run-tests.js",
+        "test:quick": "npm run build && node dist/run-tests.js --quick",
+        "test:full": "npm run build && node dist/run-tests.js",
+        "sanity": "npm run build && node dist/sanity-check.js",
+        "test:simple": "npm run build && node dist/test_simple_lsp.js",
+        "test:minimal": "npm run build && node dist/test_minimal.js",
+        "test:lsp": "npm run test:minimal"
     },
     "author": {
         "name": "Mahmud Ridwan",
@@ -37,8 +44,10 @@
     "license": "BSD-3-Clause",
     "devDependencies": {
         "@types/loglevel": "^1.5.4",
+        "@types/node": "^24.0.1",
         "prettier": "^3.5.3",
-        "typescript": "^5.8.3"
+        "typescript": "^5.8.3",
+        "vscode-languageserver": "^9.0.1"
     },
     "peerDependencies": {
         "@codemirror/autocomplete": "^6.18.6",

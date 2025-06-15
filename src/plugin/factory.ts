@@ -9,6 +9,7 @@ import {
     LanguageServerWebsocketOptions,
 } from '../types/lsp';
 import { offsetToPos } from '../utils/position';
+import { globalAbortManager } from '../utils/abort';
 import { client, documentUri, languageId } from './facets';
 import {
     LanguageServerPlugin,
@@ -18,6 +19,11 @@ import {
 export async function languageServer<TInitOptions = unknown>(
     options: LanguageServerWebsocketOptions<TInitOptions>,
 ) {
+    // Устанавливаем глобальный сигнал, если передан
+    if (options.abortSignal) {
+        globalAbortManager.setGlobalSignal(options.abortSignal);
+    }
+
     const serverUri = options.serverUri;
     const { serverUri: _, ...optionsWithoutServerUri } = options;
     const transport = new WebSocketTransport(serverUri);
@@ -31,6 +37,11 @@ export async function languageServer<TInitOptions = unknown>(
 export async function languageServerWithTransport<TInitOptions = unknown>(
     options: LanguageServerOptions<TInitOptions>,
 ) {
+    // Устанавливаем глобальный сигнал, если передан
+    if (options.abortSignal) {
+        globalAbortManager.setGlobalSignal(options.abortSignal);
+    }
+
     const lspClient =
         options.client ||
         new LanguageServerClient<TInitOptions>({

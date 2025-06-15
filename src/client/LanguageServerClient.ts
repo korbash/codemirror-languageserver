@@ -8,7 +8,7 @@ import {
     LanguageServerClientOptions,
 } from '../types/lsp';
 import { createLogger, logAsyncMethodCall } from '../utils/logger';
-import { createAbortControllerWithTimeout } from '../utils/abort';
+import { globalAbortManager, throwIfAborted } from '../utils/abort';
 import { RequestCancellation } from './RequestCancellation';
 
 export class LanguageServerClient<TInitOptions = unknown> {
@@ -27,7 +27,6 @@ export class LanguageServerClient<TInitOptions = unknown> {
     private plugins: any[] = [];
     private options: LanguageServerClientOptions<TInitOptions>;
     private logger = createLogger('CLIENT');
-    private abortSignal: AbortSignal | null = null;
     private requestCancellation: RequestCancellation;
 
     constructor(options: LanguageServerClientOptions<TInitOptions>) {
@@ -43,7 +42,6 @@ export class LanguageServerClient<TInitOptions = unknown> {
         this.workspaceFolders = options.workspaceFolders;
         this.autoClose = options.autoClose || false;
         this.transport = options.transport;
-        this.abortSignal = options.abortSignal || null;
 
         this.logger.debug('Creating RequestManager and Client');
         this.requestManager = new RequestManager([this.transport]);
@@ -59,146 +57,68 @@ export class LanguageServerClient<TInitOptions = unknown> {
             this.processNotification(data as any);
         });
 
-        // Handle WebSocket-specific logic if needed
-        const webSocketTransport = this.transport as any;
-        if (webSocketTransport && webSocketTransport.connection) {
-            this.logger.debug('Setting up WebSocket transport event handlers');
-            // XXX(hjr265): Need a better way to do this. Relevant issue:
-            // https://github.com/FurqanSoftware/codemirror-languageserver/issues/9
-            webSocketTransport.connection.addEventListener(
-                'message',
-                (message: MessageEvent) => {
-                    this.logger.trace(
-                        'WebSocket message received:',
-                        message.data,
-                    );
-                    const data = JSON.parse(message.data);
-                    if (data.method && data.id) {
-                        this.logger.trace(
-                            'Sending null response for method:',
-                            data.method,
-                        );
-                        webSocketTransport.connection.send(
-                            JSON.stringify({
-                                jsonrpc: '2.0',
-                                id: data.id,
-                                result: null,
-                            }),
-                        );
-                    }
-                },
-            );
-
-            webSocketTransport.connection.addEventListener('open', () => {
-                this.logger.info('WebSocket connection opened');
-            });
-
-            webSocketTransport.connection.addEventListener(
-                'close',
-                (event: CloseEvent) => {
-                    this.logger.warn('WebSocket connection closed', {
-                        code: event.code,
-                        reason: event.reason,
-                        wasClean: event.wasClean,
-                    });
-                },
-            );
-
-            webSocketTransport.connection.addEventListener(
-                'error',
-                (error: Event) => {
-                    this.logger.error('WebSocket connection error:', error);
-                },
-            );
-        }
-
         this.logger.debug('Starting initialization');
-        this.initializePromise = this.initialize(this.abortSignal ?? undefined);
+        this.initializePromise = this.initialize();
     }
 
     protected getInitializationOptions(): LSP.InitializeParams {
         return {
             processId: null,
-            clientInfo: {
-                name: 'codemirror-languageserver',
-                version: '1.0.0',
-            },
             rootUri: this.rootUri,
-            initializationOptions: this.options.initializationOptions ?? null,
+            workspaceFolders: this.workspaceFolders,
             capabilities: {
-                general: {
-                    regularExpressions: {
-                        engine: 'ECMAScript',
-                        version: 'ES2020',
-                    },
-                    markdown: {
-                        parser: 'marked',
-                        version: '4.0.10',
-                    },
-                },
-                textDocument: {
-                    synchronization: {
-                        dynamicRegistration: false,
-                        willSave: false,
-                        willSaveWaitUntil: false,
-                        didSave: false,
-                    },
-                    completion: {
-                        dynamicRegistration: false,
-                        completionItem: {
-                            snippetSupport: false,
-                            commitCharactersSupport: false,
-                            documentationFormat: ['markdown', 'plaintext'],
-                            deprecatedSupport: false,
-                            preselectSupport: false,
-                            tagSupport: {
-                                valueSet: [1],
-                            },
-                            insertReplaceSupport: false,
-                            resolveSupport: {
-                                properties: [
-                                    'documentation',
-                                    'detail',
-                                    'additionalTextEdits',
-                                ],
-                            },
-                            insertTextModeSupport: {
-                                valueSet: [1, 2],
-                            },
-                        },
-                        completionItemKind: {
-                            valueSet: [
-                                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-                                15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-                            ],
-                        },
-                        contextSupport: true,
-                    },
-                    hover: {
-                        dynamicRegistration: false,
-                        contentFormat: ['markdown', 'plaintext'],
-                    },
-                },
                 workspace: {
                     applyEdit: false,
                     workspaceEdit: {
                         documentChanges: false,
-                        resourceOperations: ['create', 'rename', 'delete'],
+                        resourceOperations: [],
                         failureHandling: 'textOnlyTransactional',
+                        normalizesLineEndings: false,
+                        changeAnnotationSupport: {
+                            groupsOnLabel: false,
+                        },
                     },
                     didChangeConfiguration: {
                         dynamicRegistration: false,
                     },
                     didChangeWatchedFiles: {
                         dynamicRegistration: false,
+                        relativePatternSupport: false,
                     },
                     symbol: {
                         dynamicRegistration: false,
                         symbolKind: {
                             valueSet: [
-                                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-                                15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+                                LSP.SymbolKind.File,
+                                LSP.SymbolKind.Module,
+                                LSP.SymbolKind.Namespace,
+                                LSP.SymbolKind.Package,
+                                LSP.SymbolKind.Class,
+                                LSP.SymbolKind.Method,
+                                LSP.SymbolKind.Property,
+                                LSP.SymbolKind.Field,
+                                LSP.SymbolKind.Constructor,
+                                LSP.SymbolKind.Enum,
+                                LSP.SymbolKind.Interface,
+                                LSP.SymbolKind.Function,
+                                LSP.SymbolKind.Variable,
+                                LSP.SymbolKind.Constant,
+                                LSP.SymbolKind.String,
+                                LSP.SymbolKind.Number,
+                                LSP.SymbolKind.Boolean,
+                                LSP.SymbolKind.Array,
+                                LSP.SymbolKind.Object,
+                                LSP.SymbolKind.Key,
+                                LSP.SymbolKind.Null,
+                                LSP.SymbolKind.EnumMember,
+                                LSP.SymbolKind.Struct,
+                                LSP.SymbolKind.Event,
+                                LSP.SymbolKind.Operator,
+                                LSP.SymbolKind.TypeParameter,
                             ],
+                        },
+                        tagSupport: {
+                            valueSet: [LSP.SymbolTag.Deprecated],
                         },
                     },
                     executeCommand: {
@@ -207,53 +127,127 @@ export class LanguageServerClient<TInitOptions = unknown> {
                     configuration: true,
                     workspaceFolders: true,
                 },
+                textDocument: {
+                    publishDiagnostics: {
+                        relatedInformation: false,
+                        versionSupport: false,
+                        tagSupport: {
+                            valueSet: [
+                                LSP.DiagnosticTag.Unnecessary,
+                                LSP.DiagnosticTag.Deprecated,
+                            ],
+                        },
+                        codeDescriptionSupport: false,
+                        dataSupport: false,
+                    },
+                    synchronization: {
+                        dynamicRegistration: false,
+                        willSave: false,
+                        willSaveWaitUntil: false,
+                        didSave: false,
+                    },
+                    completion: {
+                        dynamicRegistration: false,
+                        contextSupport: true,
+                        completionItem: {
+                            snippetSupport: false,
+                            commitCharactersSupport: false,
+                            documentationFormat: [LSP.MarkupKind.PlainText],
+                            deprecatedSupport: false,
+                            preselectSupport: false,
+                            tagSupport: {
+                                valueSet: [LSP.CompletionItemTag.Deprecated],
+                            },
+                            insertReplaceSupport: false,
+                            resolveSupport: {
+                                properties: ['documentation', 'detail'],
+                            },
+                            insertTextModeSupport: {
+                                valueSet: [
+                                    LSP.InsertTextMode.adjustIndentation,
+                                ],
+                            },
+                        },
+                        completionItemKind: {
+                            valueSet: [
+                                LSP.CompletionItemKind.Text,
+                                LSP.CompletionItemKind.Method,
+                                LSP.CompletionItemKind.Function,
+                                LSP.CompletionItemKind.Constructor,
+                                LSP.CompletionItemKind.Field,
+                                LSP.CompletionItemKind.Variable,
+                                LSP.CompletionItemKind.Class,
+                                LSP.CompletionItemKind.Interface,
+                                LSP.CompletionItemKind.Module,
+                                LSP.CompletionItemKind.Property,
+                                LSP.CompletionItemKind.Unit,
+                                LSP.CompletionItemKind.Value,
+                                LSP.CompletionItemKind.Enum,
+                                LSP.CompletionItemKind.Keyword,
+                                LSP.CompletionItemKind.Snippet,
+                                LSP.CompletionItemKind.Color,
+                                LSP.CompletionItemKind.File,
+                                LSP.CompletionItemKind.Reference,
+                                LSP.CompletionItemKind.Folder,
+                                LSP.CompletionItemKind.EnumMember,
+                                LSP.CompletionItemKind.Constant,
+                                LSP.CompletionItemKind.Struct,
+                                LSP.CompletionItemKind.Event,
+                                LSP.CompletionItemKind.Operator,
+                                LSP.CompletionItemKind.TypeParameter,
+                            ],
+                        },
+                    },
+                    hover: {
+                        dynamicRegistration: false,
+                        contentFormat: [LSP.MarkupKind.PlainText],
+                    },
+                },
                 window: {
-                    workDoneProgress: true,
+                    showMessage: {
+                        messageActionItem: {
+                            additionalPropertiesSupport: false,
+                        },
+                    },
+                    showDocument: {
+                        support: false,
+                    },
+                    workDoneProgress: false,
+                },
+                general: {
+                    regularExpressions: {
+                        engine: 'ECMAScript',
+                        version: 'ES2020',
+                    },
+                    markdown: {
+                        parser: 'marked',
+                        version: '1.1.0',
+                    },
                 },
             },
-            trace: 'off',
-            workspaceFolders: this.workspaceFolders,
+            initializationOptions: this.options.initializationOptions,
         };
     }
 
     public async initialize(abortSignal?: AbortSignal): Promise<void> {
-        const signal = abortSignal || this.abortSignal || undefined;
-
-        // Check if already aborted
-        if (signal?.aborted) {
-            throw new Error('Initialization was aborted');
-        }
+        const signal = globalAbortManager.createSignal(abortSignal);
+        throwIfAborted(signal);
 
         this.logger.info('Starting LSP server initialization');
 
         try {
-            // Check abort signal before proceeding
-            if (signal?.aborted) {
-                throw new Error('Initialization was aborted');
-            }
+            const initializeParams = this.getInitializationOptions();
+            this.logger.debug('Sending initialize request', initializeParams);
 
-            const params = this.getInitializationOptions();
-            this.logger.debug(
-                'Sending initialize request with params:',
-                params,
-            );
-
-            const initializeResult = await this.requestWithCancellation(
+            const result = await this.sendRequest<LSP.InitializeResult>(
                 'initialize',
-                params,
+                initializeParams,
                 signal,
             );
 
-            // Check abort signal after request
-            if (signal?.aborted) {
-                throw new Error('Initialization was aborted');
-            }
+            this.capabilities = result.capabilities;
+            this.logger.info('Server capabilities received', this.capabilities);
 
-            this.logger.debug('Initialize result received:', initializeResult);
-            this.capabilities = initializeResult.capabilities;
-            this.logger.info('Server capabilities set:', this.capabilities);
-
-            // Обновляем capabilities в системе отмены запросов
             this.requestCancellation.updateServerCapabilities(
                 this.capabilities,
             );
@@ -262,11 +256,9 @@ export class LanguageServerClient<TInitOptions = unknown> {
             this.logger.info('Client marked as ready');
 
             await this.notify('initialized', {});
-            this.logger.info(
-                'LSP server initialization completed successfully',
-            );
-        } catch (error) {
-            this.logger.error('LSP server initialization failed:', error);
+            this.logger.info('Initialization completed successfully');
+        } catch (error: any) {
+            this.logger.error('Initialization failed', error);
             throw error;
         }
     }
@@ -290,19 +282,15 @@ export class LanguageServerClient<TInitOptions = unknown> {
     public textDocumentDidOpen(params: LSP.DidOpenTextDocumentParams) {
         this.logger.debug('textDocumentDidOpen called', {
             uri: params.textDocument.uri,
-            languageId: params.textDocument.languageId,
-            version: params.textDocument.version,
         });
-        return this.notify('textDocument/didOpen', params);
+        this.notify('textDocument/didOpen', params);
     }
 
     public textDocumentDidChange(params: LSP.DidChangeTextDocumentParams) {
         this.logger.debug('textDocumentDidChange called', {
             uri: params.textDocument.uri,
-            version: params.textDocument.version,
-            changesCount: params.contentChanges.length,
         });
-        return this.notify('textDocument/didChange', params);
+        this.notify('textDocument/didChange', params);
     }
 
     public async textDocumentHover(
@@ -313,7 +301,7 @@ export class LanguageServerClient<TInitOptions = unknown> {
             uri: params.textDocument.uri,
             position: params.position,
         });
-        return await this.requestWithCancellation(
+        return await this.sendRequest<LSP.Hover>(
             'textDocument/hover',
             params,
             abortSignal,
@@ -329,11 +317,9 @@ export class LanguageServerClient<TInitOptions = unknown> {
             position: params.position,
             context: params.context,
         });
-        return await this.requestWithCancellation(
-            'textDocument/completion',
-            params,
-            abortSignal,
-        );
+        return await this.sendRequest<
+            LSP.CompletionItem[] | LSP.CompletionList | null
+        >('textDocument/completion', params, abortSignal);
     }
 
     public attachPlugin(plugin: any) {
@@ -369,12 +355,50 @@ export class LanguageServerClient<TInitOptions = unknown> {
     }
 
     // Public API for any LSP requests
-    public sendRequest<T = any>(
+    public async sendRequest<T = any>(
         method: string,
         params?: any,
         abortSignal?: AbortSignal,
     ): Promise<T> {
-        return this.requestWithCancellation(method, params, abortSignal);
+        this.logger.debug('sendRequest called', { method });
+
+        const signal = globalAbortManager.createSignal(abortSignal);
+
+        // Создаем отменяемый запрос
+        const pendingRequest = this.requestCancellation.createRequest(
+            method,
+            signal,
+        );
+
+        try {
+            // Выполняем запрос с отслеживанием
+            const result = await logAsyncMethodCall(
+                this.logger,
+                `sendRequest(${method})`,
+                (method: string, params?: any) =>
+                    this.client.request({ method, params }, null as any),
+            )(method, params);
+
+            this.requestCancellation.completeRequest(pendingRequest.id, true);
+            return result;
+        } catch (error) {
+            this.requestCancellation.completeRequest(pendingRequest.id, false);
+
+            if (RequestCancellation.isCancellationError(error)) {
+                this.logger.debug('Request was cancelled', {
+                    method,
+                    id: pendingRequest.id,
+                });
+            } else {
+                this.logger.error('Request failed', {
+                    method,
+                    id: pendingRequest.id,
+                    error,
+                });
+            }
+
+            throw error;
+        }
     }
 
     // Public API for any LSP notifications
@@ -389,12 +413,12 @@ export class LanguageServerClient<TInitOptions = unknown> {
     }
 
     // Typed versions for known methods
-    public request<K extends keyof LSPRequestMap>(
+    public async request<K extends keyof LSPRequestMap>(
         method: K,
         params: LSPRequestMap[K][0],
         abortSignal?: AbortSignal,
     ): Promise<LSPRequestMap[K][1]> {
-        return this.requestWithCancellation(method, params, abortSignal);
+        return this.sendRequest(method, params, abortSignal);
     }
 
     public notify<K extends keyof LSPNotifyMap>(
@@ -435,109 +459,6 @@ export class LanguageServerClient<TInitOptions = unknown> {
         }
     }
 
-    /**
-     * Внутренний метод для выполнения запросов с поддержкой отмены LSP
-     */
-    private async requestWithCancellation<T = any>(
-        method: string,
-        params?: any,
-        abortSignal?: AbortSignal,
-    ): Promise<T> {
-        this.logger.debug('requestWithCancellation called', { method });
-
-        // Если не передан abortSignal и нет this.abortSignal, создаем дефолтный timeout 10 сек
-        let signal: AbortSignal | undefined;
-        if (abortSignal) {
-            signal = abortSignal;
-        } else if (this.abortSignal) {
-            signal = this.abortSignal;
-        } else {
-            // Создаем дефолтный timeout 10 секунд
-            signal = createAbortControllerWithTimeout(10000).signal;
-            this.logger.debug('Created default timeout signal', {
-                timeoutMs: 10000,
-            });
-        }
-
-        // Создаем отменяемый запрос
-        const pendingRequest = this.requestCancellation.createRequest(
-            method,
-            signal,
-        );
-
-        try {
-            // Выполняем запрос с отслеживанием
-            const requestPromise = logAsyncMethodCall(
-                this.logger,
-                `requestWithCancellation(${method})`,
-                (method: string, params?: any) =>
-                    this.client.request({ method, params }, null as any),
-            )(method, params);
-
-            // Ждем результат или отмену
-            const result = await new Promise<T>((resolve, reject) => {
-                let isResolved = false;
-
-                const abortHandler = () => {
-                    if (!isResolved) {
-                        isResolved = true;
-                        reject(RequestCancellation.createCancellationError());
-                    }
-                };
-
-                pendingRequest.abortController.signal.addEventListener(
-                    'abort',
-                    abortHandler,
-                );
-
-                requestPromise
-                    .then((value) => {
-                        if (!isResolved) {
-                            isResolved = true;
-                            pendingRequest.abortController.signal.removeEventListener(
-                                'abort',
-                                abortHandler,
-                            );
-                            resolve(value);
-                        }
-                    })
-                    .catch((error) => {
-                        if (!isResolved) {
-                            isResolved = true;
-                            pendingRequest.abortController.signal.removeEventListener(
-                                'abort',
-                                abortHandler,
-                            );
-                            reject(error);
-                        }
-                    });
-            });
-
-            this.requestCancellation.completeRequest(pendingRequest.id, true);
-            return result;
-        } catch (error) {
-            this.requestCancellation.completeRequest(pendingRequest.id, false);
-
-            if (RequestCancellation.isCancellationError(error)) {
-                this.logger.debug('Request was cancelled', {
-                    method,
-                    id: pendingRequest.id,
-                });
-            } else {
-                this.logger.error('Request failed', {
-                    method,
-                    id: pendingRequest.id,
-                    error,
-                });
-            }
-
-            throw error;
-        }
-    }
-
-    /**
-     * Отменяет активный запрос по ID
-     */
     public cancelRequest(
         requestId: string | number,
         reason?: string,
@@ -545,9 +466,6 @@ export class LanguageServerClient<TInitOptions = unknown> {
         return this.requestCancellation.cancelRequest(requestId, reason);
     }
 
-    /**
-     * Получает информацию об активных запросах
-     */
     public getPendingRequests() {
         return this.requestCancellation.getPendingRequests();
     }

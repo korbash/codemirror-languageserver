@@ -22,4 +22,6 @@ export {
     combineAbortSignals,
     isAborted,
     throwIfAborted,
+    AbortSignalManager,
+    globalAbortManager,
 } from './abort';

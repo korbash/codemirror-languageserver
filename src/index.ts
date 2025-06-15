@@ -48,7 +48,6 @@ export type {
     FetchTransportOptions,
     Transport,
     TransportOptions,
-    WebSocketTransportOptions,
 } from './types/transport';
 // Export utility functions
 export {
@@ -73,6 +72,8 @@ export {
     combineAbortSignals,
     isAborted,
     throwIfAborted,
+    AbortSignalManager,
+    globalAbortManager,
 } from './utils';
 // Export logger types
 export type { Logger, LogLevel, ModuleName } from './utils';
