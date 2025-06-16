@@ -1,172 +1,132 @@
-# Тестирование CodeMirror Language Server
+# Тестирование
 
-Этот документ описывает как тестировать WebSocket транспорт для Language Server Protocol (LSP).
+Современная система тестирования на **Mocha** + **TypeScript ESM** по образцу Microsoft vscode-languageserver-node.
 
-## Быстрая проверка
-
-Для самой простой проверки работоспособности:
+## Быстрый старт
 
 ```bash
-npm run sanity
+npm run sanity    # Базовая проверка (рекомендуется)
+npm test         # Все тесты
+npm run test:watch # Режим наблюдения
 ```
 
-Этот тест проверяет только базовое WebSocket подключение.
+**Примечание:** Предупреждения Node.js о `--experimental-loader` и `fs.Stats` - это нормально и не влияют на работу тестов.
 
-## Основные тесты
+## Команды
 
-### Быстрый тест
+| Команда                   | Описание                           |
+| ------------------------- | ---------------------------------- |
+| `npm run sanity`          | Быстрая проверка работоспособности |
+| `npm test`                | Все тесты                          |
+| `npm run test:connection` | Только WebSocket подключение       |
+| `npm run test:lsp`        | Только LSP протокол                |
+| `npm run test:watch`      | Автоперезапуск при изменениях      |
 
-```bash
-npm run test:quick
+## Структура
+
+```
+src/test/
+├── sanity.test.ts      # Критические проверки
+├── connection.test.ts  # WebSocket транспорт
+└── lsp.test.ts        # LSP протокол
 ```
 
-Выполняет минимальную проверку:
-- WebSocket подключение
-- LSP инициализация
-- Получение server capabilities
-
-### Полное тестирование
-
-```bash
-npm run test
-# или
-npm run test:full
-```
-
-Выполняет все тесты:
-- Подключение к WebSocket
-- Инициализация LSP
-- Проверка capabilities сервера
-- Обработка ошибок
-
-## Настройка тестового сервера
+## Настройка сервера
 
 Тесты подключаются к Python LSP серверу на `ws://127.0.0.1:8000/lsp/python`.
 
-Для запуска тестового сервера необходимо:
-
-1. Убедиться что Python LSP сервер запущен на порту 8000
-2. WebSocket endpoint доступен по адресу `/lsp/python`
-
-## Структура тестов
-
-### sanity-check.ts
-Самый простой тест - только проверка подключения к WebSocket.
-
-### basic.test.ts
-Основные тесты функциональности:
-
-1. **testConnection()** - проверка WebSocket подключения
-2. **testInitialization()** - LSP инициализация и получение capabilities
-3. **testCapabilities()** - детальная проверка server capabilities
-4. **testErrorHandling()** - обработка различных ошибок:
-   - Неверный URL сервера
-   - Использование connection до подключения
-   - Повторное подключение
-
-### run-tests.ts
-Runner для запуска тестов с поддержкой флагов.
+**Важно:** Если сервер недоступен, тесты автоматически пропускаются с предупреждением.
 
 ## Интерпретация результатов
 
-### Успешный результат
-```
-✅ ПРОШЕЛ - Подключение к WebSocket (150ms)
-✅ ПРОШЕЛ - Инициализация LSP (320ms)
-✅ ПРОШЕЛ - Получение capabilities (280ms)
-✅ ПРОШЕЛ - Обработка ошибок (450ms)
+### ✅ Успех
 
-📊 Итого: 4/4 тестов прошли успешно
-🎉 ВСЕ ТЕСТЫ ПРОЙДЕНЫ! Код работает адекватно.
 ```
+  Sanity Check
+    ✔ WebSocket transport can connect (50ms)
+    ✔ WebSocket transport provides connection after connect
+    ✔ WebSocket transport throws error when accessing connection before connect
+    ✔ WebSocket transport can be closed safely
 
-### Результат с ошибками
-```
-✅ ПРОШЕЛ - Подключение к WebSocket (150ms)
-❌ ПРОВАЛЕН - Инициализация LSP (1200ms)
-    Ошибка: WebSocket connection timeout after 10000ms
-
-📊 Итого: 1/4 тестов прошли успешно
-⚠️  Есть проблемы, требующие внимания.
+  23 passing (4s)
 ```
 
-## Типичные проблемы
+### ⚠️ Предупреждения
 
-### Сервер недоступен
 ```
-❌ Ошибка: Failed to connect to ws://127.0.0.1:8000/lsp/python: WebSocket connection to ws://127.0.0.1:8000/lsp/python failed
-```
-
-**Решение:** Убедитесь что LSP сервер запущен на указанном адресе.
-
-### Таймаут подключения
-```
-❌ Ошибка: WebSocket connection timeout after 10000ms
+  LSP Protocol
+    ⚠️  LSP server not available at ws://127.0.0.1:8000/lsp/python
+    ✔ Initialize LSP server
+  1 passing (45ms)
 ```
 
-**Решение:**
-- Проверьте доступность сервера
-- Увеличьте таймаут в опциях транспорта
+### ❌ Ошибки
 
-### Ошибка инициализации
 ```
-❌ Ошибка: Сервер не вернул capabilities
+  WebSocket Connection
+    ✗ Connect timeout (timeout exceeded)
+      Error: Test exceeded timeout 10000ms
+  1 failing
 ```
 
-**Решение:** Проверьте совместимость LSP сервера и корректность initialize запроса.
+## Добавление тестов
+
+### Новый файл
+
+```typescript
+// src/test/my-feature.test.ts
+import assert from 'assert';
+import { WebSocketTransport } from '../transports/WebSocketTransport.js';
+
+const TEST_SERVER_URL = 'ws://127.0.0.1:8000/lsp/python';
+
+describe('My Feature', () => {
+    it('should work correctly', async () => {
+        const transport = new WebSocketTransport(TEST_SERVER_URL);
+
+        try {
+            await transport.connect();
+            assert.ok(transport.isConnected);
+        } finally {
+            transport.close(); // Обязательная очистка
+        }
+    });
+});
+```
+
+### Запуск отдельного теста
+
+```bash
+NODE_OPTIONS="--loader ts-node/esm" npx mocha src/test/my-feature.test.ts
+```
+
+## Принципы
+
+- **Независимость**: каждый тест самодостаточен
+- **Graceful degradation**: корректная обработка недоступного сервера
+- **Очистка ресурсов**: обязательный `finally` блок
+- **Четкие сообщения**: информативные assert сообщения
+- **ESM совместимость**: использует современные ES модули с TypeScript
 
 ## Отладка
 
-Для детальной отладки включите логирование:
+### VS Code
 
-```typescript
-import { setLogLevel } from './utils/logger';
-setLogLevel('DEBUG'); // или 'TRACE' для максимальной детализации
-```
+Создайте `.vscode/launch.json`:
 
-Уровни логирования:
-- `TRACE` - максимальная детализация
-- `DEBUG` - отладочная информация
-- `INFO` - информационные сообщения (по умолчанию)
-- `WARN` - предупреждения
-- `ERROR` - только ошибки
-- `SILENT` - без логов
-
-## Создание собственных тестов
-
-Пример простого теста:
-
-```typescript
-import { WebSocketTransport } from '../transports/WebSocketTransport';
-import * as LSP from 'vscode-languageserver-protocol';
-
-async function myTest() {
-    const transport = new WebSocketTransport('ws://127.0.0.1:8000/lsp/python');
-
-    try {
-        await transport.connect();
-        const connection = transport.connection;
-
-        // Ваш тест здесь
-        const result = await connection.sendRequest(
-            LSP.InitializeRequest.type,
-            { processId: null, rootUri: 'file:///test', capabilities: {} }
-        );
-
-        console.log('Тест прошел:', !!result.capabilities);
-
-    } finally {
-        transport.close();
-    }
+```json
+{
+    "type": "node",
+    "request": "launch",
+    "name": "Debug Tests",
+    "program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
+    "args": ["--loader", "ts-node/esm", "src/test/**/*.test.ts"],
+    "env": { "NODE_OPTIONS": "--loader ts-node/esm" }
 }
 ```
 
-## Continuous Integration
-
-Для CI/CD рекомендуется использовать быстрый тест:
+### Детальный вывод
 
 ```bash
-npm run test:quick
+npx mocha --reporter spec
 ```
-
-Он выполняется быстрее и покрывает основную функциональность.

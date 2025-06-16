@@ -1,18 +1,14 @@
 # CodeMirror 6 Language Server Plugin
 
-A CodeMirror 6 extension that connects to any Language Server over WebSocket to provide:
+CodeMirror 6 extension для подключения к Language Server через WebSocket с поддержкой автодополнения, hover-подсказок и диагностики.
 
-- Auto-completion
-- Hover tooltips
-- Diagnostics and linting
-
-## Installation
+## Установка
 
 ```bash
 npm install github:korbash/codemirror-languageserver#full-python
 ```
 
-## Usage
+## Использование
 
 ```js
 import { EditorState, EditorView } from '@codemirror/basic-setup';
@@ -29,55 +25,44 @@ async function createEditor() {
         languageId: 'python',
     });
 
-    const view = new EditorView({
+    return new EditorView({
         state: EditorState.create({
             extensions: [python(), ...lspExtension],
         }),
         parent: document.body,
     });
-
-    return view;
 }
 
 createEditor().catch(console.error);
 ```
 
-## Error Handling
+## Обработка ошибок
 
 ```js
-async function createEditor() {
-    try {
-        const lspExtension = await languageServer({
-            serverUri: 'ws://localhost:3000',
-            rootUri: 'file:///',
-            documentUri: 'file:///script.py',
-            languageId: 'python',
-        });
-
-        return new EditorView({
-            state: EditorState.create({
-                extensions: [python(), ...lspExtension],
-            }),
-            parent: document.body,
-        });
-    } catch (error) {
-        console.error('LSP failed:', error);
-
-        return new EditorView({
-            state: EditorState.create({
-                extensions: [python()],
-            }),
-            parent: document.body,
-        });
-    }
+try {
+    const lspExtension = await languageServer({
+        serverUri: 'ws://localhost:3000',
+        rootUri: 'file:///',
+        documentUri: 'file:///script.py',
+        languageId: 'python',
+    });
+    // Создание редактора с LSP
+} catch (error) {
+    console.error('LSP failed:', error);
+    // Fallback без LSP
 }
 ```
 
-## Request Cancellation
+## API
 
-The library supports cancelling long-running LSP operations using both the standard LSP `$/cancelRequest` mechanism and browser `AbortSignal` API.
+### Основные функции
 
-### Basic Cancellation
+- `languageServer(options)` - создание LSP расширения
+- `languageServerWithTransport(options)` - с кастомным транспортом
+- `getLanguageServerClient(view)` - получение LSP клиента
+- `setLogLevel(level)` - настройка логирования (`TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `SILENT`)
+
+### Отмена запросов
 
 ```js
 import {
@@ -87,42 +72,12 @@ import {
 
 const client = getLanguageServerClient(view);
 
-// Cancel with timeout
+// С таймаутом
 const controller = createAbortControllerWithTimeout(5000);
-try {
-    const result = await client.textDocumentHover(
-        {
-            textDocument: { uri: 'file:///script.py' },
-            position: { line: 5, character: 10 },
-        },
-        controller.signal,
-    );
-} catch (error) {
-    if (error.code === -32800) {
-        // RequestCancelled
-        console.log('Request was cancelled');
-    }
-}
+const result = await client.textDocumentHover(params, controller.signal);
 
-// Manual cancellation
-const manualController = new AbortController();
-setTimeout(() => manualController.abort(), 2000);
-
-const completion = await client.textDocumentCompletion(
-    {
-        textDocument: { uri: 'file:///script.py' },
-        position: { line: 10, character: 0 },
-    },
-    manualController.signal,
-);
-```
-
-### Session-wide Cancellation
-
-```js
-// Create AbortController for entire LSP session
-const sessionController = createAbortControllerWithTimeout(300000); // 5 minutes
-
+// Отмена всей сессии
+const sessionController = new AbortController();
 const lspExtension = await languageServer({
     serverUri: 'ws://localhost:3000',
     rootUri: 'file:///',
@@ -131,65 +86,12 @@ const lspExtension = await languageServer({
     abortSignal: sessionController.signal,
 });
 
-// Or manual cancellation on page close
-const manualController = new AbortController();
-window.addEventListener('beforeunload', () => {
-    manualController.abort();
-});
-```
-
-### Managing Active Requests
-
-```js
-const client = getLanguageServerClient(view);
-
-// Get all pending requests
+// Управление активными запросами
 const pendingRequests = client.getPendingRequests();
-console.log(`Active requests: ${pendingRequests.size}`);
-
-// Cancel specific request
 await client.cancelRequest('req_123', 'User cancelled');
-
-// Cancel all requests
-for (const [id] of pendingRequests) {
-    await client.cancelRequest(id, 'Bulk cancellation');
-}
 ```
 
-## API
-
-### `languageServer(options)`
-
-Returns Promise that resolves when LSP is fully initialized.
-
-**Options:**
-
-- `abortSignal?: AbortSignal` - Signal to cancel the entire LSP session
-
-### `languageServerWithTransport(options)`
-
-Same as above but with custom transport.
-
-### `getLanguageServerClient(view)`
-
-Get LSP client from editor view for custom requests.
-
-```js
-import { getLanguageServerClient } from 'codemirror-languageserver';
-
-const client = getLanguageServerClient(view);
-if (client && client.ready) {
-    // Send request with cancellation support
-    const controller = createAbortControllerWithTimeout(10000);
-    const symbols = await client.sendRequest(
-        'textDocument/documentSymbol',
-        params,
-        controller.signal,
-    );
-}
-```
-
-**Client Methods:**
+### Методы клиента
 
 - `textDocumentHover(params, abortSignal?)`
 - `textDocumentCompletion(params, abortSignal?)`
@@ -197,118 +99,184 @@ if (client && client.ready) {
 - `cancelRequest(requestId, reason?)`
 - `getPendingRequests()`
 
-## Timeout Management
+## Архитектура
 
-All timeouts are managed through `AbortSignal`. The library does not use internal timeouts - all cancellation logic is controlled by the user:
+### Структура библиотеки
+
+```
+src/
+├── client/                 # LSP клиент
+│   ├── LanguageServerClient.ts    # Основной LSP клиент
+│   └── RequestCancellation.ts     # Система отмены запросов
+├── features/               # Провайдеры функций
+│   ├── completion.ts              # Автодополнение
+│   ├── hover.ts                   # Hover подсказки
+│   └── diagnostics.ts             # Диагностика и линтинг
+├── plugin/                 # CodeMirror интеграция
+│   ├── LanguageServerPlugin.ts    # Основной плагин
+│   ├── factory.ts                 # Фабричные функции
+│   └── facets.ts                  # CodeMirror facets
+├── transports/             # Транспортные слои
+│   ├── WebSocketTransport.ts      # WebSocket транспорт
+│   └── WebSocketMessage.ts        # WebSocket сообщения
+├── types/                  # TypeScript типы
+└── utils/                  # Утилиты (логгер, abort signals)
+```
+
+### Основные компоненты
+
+#### `LanguageServerClient`
+
+Центральный компонент для взаимодействия с LSP сервером:
+
+- Управляет жизненным циклом подключения
+- Отправляет запросы и уведомления
+- Обрабатывает отмену запросов
+- Поддерживает различные типы серверов (Python, TypeScript, etc.)
+
+#### `WebSocketTransport`
+
+Надежный транспорт для WebSocket соединений:
+
+- Использует Microsoft's vscode-languageserver подход
+- Автоматическое переподключение
+- Graceful обработка ошибок
+- Поддержка timeout'ов
+
+#### `LanguageServerPlugin`
+
+CodeMirror плагин, связывающий редактор с LSP:
+
+- Отслеживает изменения документа
+- Синхронизирует состояние с сервером
+- Управляет провайдерами функций
+- Обрабатывает события редактора
+
+#### Feature Providers
+
+Модульные провайдеры LSP функций:
+
+- **CompletionProvider** - автодополнение кода
+- **HoverProvider** - контекстные подсказки
+- **DiagnosticsProvider** - ошибки и предупреждения
+
+### Поток данных
+
+```
+CodeMirror Editor
+       ↓
+LanguageServerPlugin
+       ↓
+LanguageServerClient
+       ↓
+WebSocketTransport
+       ↓
+LSP Server
+```
+
+1. **Редактор** генерирует события (изменения текста, курсор)
+2. **Plugin** обрабатывает события и преобразует в LSP запросы
+3. **Client** отправляет запросы через транспорт
+4. **Transport** управляет WebSocket соединением
+5. **Server** обрабатывает запросы и возвращает результаты
+6. **Plugin** применяет результаты к редактору
+
+### Расширяемость
+
+Библиотека спроектирована для легкого расширения:
 
 ```js
-import {
-    createAbortControllerWithTimeout,
-    combineAbortSignals,
-    RequestCancellation,
-} from 'codemirror-languageserver';
+// Кастомный провайдер автодополнения
+class MyCompletionProvider {
+    async provideCompletionItems(params, client) {
+        // Ваша логика
+        return completions;
+    }
+}
 
-// Different timeouts for different types of operations
+// Кастомный транспорт
+class MyTransport {
+    async connect() {
+        /* ... */
+    }
+    get connection() {
+        /* ... */
+    }
+}
+
+// Использование
+const lspExtension = await languageServerWithTransport({
+    transport: new MyTransport(),
+    completionProvider: new MyCompletionProvider(),
+});
+```
+
+## Производительность и Best Practices
+
+### Оптимизация производительности
+
+#### 1. Настройка timeouts
+
+```js
+// Разные timeouts для разных операций
 const client = getLanguageServerClient(view);
 
-// Fast operations - short timeout
+// Быстрые операции - короткий timeout
 const hoverResult = await client.textDocumentHover(
     params,
-    createAbortControllerWithTimeout(3000).signal, // 3 seconds
+    createAbortControllerWithTimeout(2000).signal,
 );
 
-// Auto-completion - medium timeout
+// Автодополнение - средний timeout
 const completion = await client.textDocumentCompletion(
     params,
-    createAbortControllerWithTimeout(10000).signal, // 10 seconds
+    createAbortControllerWithTimeout(5000).signal,
 );
 
-// Complex operations - long timeout
+// Сложные операции - длинный timeout
 const symbols = await client.sendRequest(
     'textDocument/documentSymbol',
     params,
-    createAbortControllerWithTimeout(30000).signal, // 30 seconds
+    createAbortControllerWithTimeout(15000).signal,
 );
-
-// Combine multiple signals
-const userController = new AbortController();
-const timeoutController = createAbortControllerWithTimeout(30000);
-const combined = combineAbortSignals(
-    userController.signal,
-    timeoutController.signal,
-);
-const result = await client.textDocumentHover(params, combined);
-
-// Check if error is cancellation
-if (RequestCancellation.isCancellationError(error)) {
-    return null; // Ignore cancellation
-}
 ```
 
-### Smart Cancellation of Outdated Requests
+#### 2. Debouncing изменений
 
 ```js
-class HoverProvider {
-    constructor() {
-        this.currentController = null;
+class OptimizedPlugin extends LanguageServerPlugin {
+    constructor(view, options) {
+        super(view, options);
+        this.changeDebounceTimeout = null;
+        this.changeDelay = 300; // 300ms debounce
     }
 
-    async provideHover(params) {
-        // Cancel previous request
-        this.currentController?.abort();
+    update(update) {
+        if (update.docChanged) {
+            // Отменяем предыдущий timeout
+            if (this.changeDebounceTimeout) {
+                clearTimeout(this.changeDebounceTimeout);
+            }
 
-        // Create new one with timeout
-        this.currentController = createAbortControllerWithTimeout(3000);
-
-        try {
-            const result = await client.textDocumentHover(
-                params,
-                this.currentController.signal,
-            );
-            return result;
-        } finally {
-            this.currentController = null;
+            // Устанавливаем новый timeout
+            this.changeDebounceTimeout = setTimeout(() => {
+                this.syncDocument(update);
+            }, this.changeDelay);
         }
     }
 }
 ```
 
-## Timeout Principles
+## Тестирование
 
-The library follows these principles for timeout management:
-
-- **Smart defaults**: The library uses a 10-second default timeout to prevent hanging requests
-- **User-controlled**: All timeout logic is managed through `AbortSignal`
-- **Flexible**: Different operations can have different timeout strategies
-- **Composable**: Multiple signals can be combined using `combineAbortSignals`
-
-```js
-// If no AbortSignal is provided, operations use a 10-second default timeout
-const result = await client.textDocumentHover(params); // 10-second timeout
-
-// User controls timeout per operation (overrides default)
-const quickResult = await client.textDocumentHover(
-    params,
-    createAbortControllerWithTimeout(1000).signal, // 1-second timeout
-);
-
-// Session-wide timeout combined with operation-specific timeout
-const sessionSignal = createAbortControllerWithTimeout(300000).signal;
-const operationSignal = createAbortControllerWithTimeout(5000).signal;
-const combined = combineAbortSignals(sessionSignal, operationSignal);
-const result = await client.textDocumentCompletion(params, combined);
+```bash
+npm run sanity      # Быстрая проверка
+npm test           # Все тесты
+npm run test:watch # Режим наблюдения
 ```
 
-## Cancellation Utilities
+Подробности в [TESTING.md](TESTING.md).
 
-## Logging
-
-```js
-import { setLogLevel } from 'codemirror-languageserver';
-
-setLogLevel('DEBUG'); // TRACE, DEBUG, INFO, WARN, ERROR, SILENT
-```
-
-## License
+## Лицензия
 
 BSD-3-Clause
