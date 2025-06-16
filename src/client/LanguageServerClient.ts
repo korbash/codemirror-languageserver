@@ -1,6 +1,5 @@
 import * as LSP from 'vscode-languageserver-protocol';
 import { RequestManager, Client } from '@open-rpc/client-js';
-import { Transport } from '@open-rpc/client-js/build/transports/Transport';
 import {
     LSPRequestMap,
     LSPNotifyMap,
