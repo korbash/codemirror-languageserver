@@ -14,7 +14,7 @@ import {
     Emitter,
 } from 'vscode-languageserver-protocol';
 
-import { Subscription } from '../types/Subscription';
+import { Subscription } from '../types/Subscription.js';
 
 /**
  * Options for WebSocket message writer configuration

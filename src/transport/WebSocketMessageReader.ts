@@ -14,7 +14,7 @@ import {
     Emitter,
 } from 'vscode-languageserver-protocol';
 
-import { Subscription, wrapDisposable } from '../types/Subscription';
+import { Subscription, wrapDisposable } from '../types/Subscription.js';
 
 /**
  * Options for WebSocket message reader configuration

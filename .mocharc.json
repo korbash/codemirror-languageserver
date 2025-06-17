@@ -1,8 +1,8 @@
 {
-    "loader": "ts-node/esm",
-    "extensions": ["ts", "js"],
+    "extensions": ["js"],
+    "spec": "dist/test/**/*.test.js",
     "recursive": true,
     "timeout": 15000,
     "exit": true,
-    "require": ["ts-node/esm"]
+    "reporter": "spec"
 }

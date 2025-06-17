@@ -30,7 +30,7 @@ import {
     Hover,
     enableDebugMode,
     getDebugInfo,
-} from './index';
+} from './index.js';
 
 import { Location, LocationLink } from 'vscode-languageserver-protocol';
 
@@ -150,7 +150,7 @@ function setupLSPNotifications(server: LanguageServer): Array<Subscription> {
     subscriptions.push(diagnosticsSubscription);
 
     // Subscribe to server messages
-    const showMessageSubscription = server.onShowMessage((params) => {
+    const showMessageSubscription = server.onShowMessage((params: any) => {
         const types = ['', 'Error', 'Warning', 'Info', 'Log'];
         console.log(
             `💬 Server message [${types[params.type]}]: ${params.message}`,
@@ -159,7 +159,7 @@ function setupLSPNotifications(server: LanguageServer): Array<Subscription> {
     subscriptions.push(showMessageSubscription);
 
     // Subscribe to progress notifications
-    const progressSubscription = server.onProgress((params) => {
+    const progressSubscription = server.onProgress((params: any) => {
         if (params.value.kind === 'begin') {
             console.log(`⏳ Starting: ${params.value.title}`);
         } else if (params.value.kind === 'end') {
@@ -227,7 +227,7 @@ async function makeLSPRequests(server: LanguageServer, documentUri: string) {
         timeout: async () => {
             console.warn('⏰ Completion request timed out');
         },
-        error: async (error) => {
+        error: async (error: any) => {
             console.error('❌ Completion request failed:', error.message);
         },
         cancelled: async () => {
@@ -263,7 +263,7 @@ async function makeLSPRequests(server: LanguageServer, documentUri: string) {
                 console.log('No hover information available');
             }
         },
-        error: async (error) => {
+        error: async (error: any) => {
             console.error('❌ Hover request failed:', error.message);
         },
         timeout: async () => {
@@ -284,7 +284,7 @@ async function makeLSPRequests(server: LanguageServer, documentUri: string) {
     });
 
     await definitionResult.match({
-        success: async (definition) => {
+        success: async (definition: any) => {
             if (definition) {
                 if (Array.isArray(definition)) {
                     console.log(`🎯 Found ${definition.length} definition(s)`);
@@ -327,7 +327,7 @@ async function makeLSPRequests(server: LanguageServer, documentUri: string) {
                 console.log('No definition found');
             }
         },
-        error: async (error) => {
+        error: async (error: any) => {
             console.error('❌ Definition request failed:', error.message);
         },
         timeout: async () => {
@@ -507,7 +507,7 @@ async function setupCompleteApplication() {
         const shutdownResult = await server.shutdown();
         shutdownResult.match({
             success: () => console.log('✅ Server shutdown successfully'),
-            error: (error) =>
+            error: (error: any) =>
                 console.error('❌ Server shutdown failed:', error.message),
             timeout: () => console.warn('⏰ Server shutdown timed out'),
             cancelled: () => console.log('🚫 Server shutdown was cancelled'),
@@ -554,7 +554,7 @@ async function modernJavaScriptExample() {
         );
 
         // Server will be automatically disposed when exiting this block
-        using diagnostics = server.onDiagnostics((params) => {
+        using diagnostics = server.onDiagnostics((params: any) => {
             console.log('Diagnostics received:', params.diagnostics.length);
         });
 
@@ -565,8 +565,8 @@ async function modernJavaScriptExample() {
         });
 
         completion.match({
-            success: (items) => console.log('Completion successful'),
-            error: (error) => console.error('Completion failed:', error),
+            success: (items: any) => console.log('Completion successful'),
+            error: (error: any) => console.error('Completion failed:', error),
             timeout: () => console.warn('Completion timed out'),
             cancelled: () => console.log('Completion cancelled'),
             connectionReset: () => console.error('Connection lost'),

@@ -25,7 +25,7 @@ import {
     Subscription,
     CompositeSubscription,
     createSubscription,
-} from '../types';
+} from '../types/index.js';
 
 /**
  * Pending request tracking

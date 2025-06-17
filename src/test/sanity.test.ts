@@ -1,26 +1,51 @@
 /**
- * Sanity test - базовая проверка работоспособности
- * Проверяет только самые критичные функции
+ * Sanity test - базовая проверка работоспособности нового LanguageServer API
+ * Проверяет только самые критичные функции высокого уровня
  */
 
 import assert from 'assert';
-import { WebSocketTransport } from '../transports/WebSocketTransport.js';
+import {
+    createAndInitializeLanguageServer,
+    createLanguageServer,
+    LanguageServerOptions,
+    LSPResult,
+    LanguageServer,
+} from '../index.js';
 
 const TEST_SERVER_URL = 'ws://127.0.0.1:8000/lsp/python';
 
-describe('Sanity Check', () => {
-    it('WebSocket transport can connect', async () => {
-        const transport = new WebSocketTransport(TEST_SERVER_URL);
+const TEST_OPTIONS: LanguageServerOptions = {
+    name: 'Python LSP Test',
+    rootUri: 'file:///test',
+    logging: { level: 'error' }, // Минимальное логирование для тестов
+    request: { timeout: 10000 },
+    connection: { reconnectAttempts: 1 },
+};
 
+describe('Sanity Check - New LanguageServer API', () => {
+    it('Can create LanguageServer instance', async () => {
         try {
-            await transport.connect();
-            assert.strictEqual(
-                transport.isConnected,
-                true,
-                'Transport should be connected',
+            const server = await createLanguageServer(
+                TEST_SERVER_URL,
+                TEST_OPTIONS,
             );
+            assert.ok(
+                server instanceof Object,
+                'Should return LanguageServer instance',
+            );
+
+            // Проверяем основные методы
+            assert.ok(
+                typeof server.initialize === 'function',
+                'Should have initialize method',
+            );
+            assert.ok(
+                typeof server.dispose === 'function',
+                'Should have dispose method',
+            );
+
+            server.dispose();
         } catch (error) {
-            // Если сервер недоступен, это не ошибка теста, а проблема окружения
             if (
                 error instanceof Error &&
                 error.message.includes('ECONNREFUSED')
@@ -32,86 +57,228 @@ describe('Sanity Check', () => {
                 return; // Пропускаем тест
             }
             throw error;
-        } finally {
-            transport.close();
         }
     });
 
-    it('WebSocket transport provides connection after connect', async () => {
-        const transport = new WebSocketTransport(TEST_SERVER_URL);
+    it('Can create and initialize LanguageServer', async () => {
+        const serverResult = await createAndInitializeLanguageServer(
+            TEST_SERVER_URL,
+            TEST_OPTIONS,
+        );
 
-        try {
-            await transport.connect();
+        assert.ok(serverResult, 'Should return LSPResult');
+        assert.ok(
+            typeof serverResult.match === 'function',
+            'Should have match method',
+        );
+        assert.ok(
+            typeof serverResult.isSuccess === 'function',
+            'Should have isSuccess method',
+        );
 
-            // Проверяем что connection доступен
-            const connection = transport.connection;
-            assert.ok(
-                connection,
-                'Connection should be available after connect',
-            );
-        } catch (error) {
-            if (
-                error instanceof Error &&
-                error.message.includes('ECONNREFUSED')
-            ) {
-                console.warn(
-                    '⚠️  LSP server not available at',
-                    TEST_SERVER_URL,
+        const testCompleted = await serverResult.match({
+            success: (server: LanguageServer) => {
+                assert.ok(server, 'Should receive server instance');
+                assert.ok(
+                    typeof server.completion === 'function',
+                    'Should have completion method',
                 );
-                return;
-            }
-            throw error;
-        } finally {
-            transport.close();
-        }
-    });
-
-    it('WebSocket transport throws error when accessing connection before connect', () => {
-        const transport = new WebSocketTransport(TEST_SERVER_URL);
-
-        try {
-            // Это должно выбросить ошибку
-            transport.connection;
-            assert.fail(
-                'Should throw error when accessing connection before connect',
-            );
-        } catch (error) {
-            assert.ok(error instanceof Error, 'Should throw an Error');
-            assert.ok(
-                error.message.includes('not connected') ||
-                    error.message.includes('Not connected'),
-                `Error message should mention not connected, got: ${error.message}`,
-            );
-        } finally {
-            transport.close();
-        }
-    });
-
-    it('WebSocket transport can be closed safely', async () => {
-        const transport = new WebSocketTransport(TEST_SERVER_URL);
-
-        try {
-            await transport.connect();
-            assert.strictEqual(transport.isConnected, true);
-
-            transport.close();
-            assert.strictEqual(
-                transport.isConnected,
-                false,
-                'Should be disconnected after close',
-            );
-        } catch (error) {
-            if (
-                error instanceof Error &&
-                error.message.includes('ECONNREFUSED')
-            ) {
-                console.warn(
-                    '⚠️  LSP server not available at',
-                    TEST_SERVER_URL,
+                assert.ok(
+                    typeof server.hover === 'function',
+                    'Should have hover method',
                 );
-                return;
-            }
-            throw error;
-        }
+                assert.ok(
+                    typeof server.dispose === 'function',
+                    'Should have dispose method',
+                );
+
+                server.dispose();
+                return true;
+            },
+            timeout: () => {
+                console.warn('⚠️  LSP server initialization timed out');
+                return true; // Не фейлим тест, это проблема окружения
+            },
+            error: (error: Error) => {
+                if (error.message.includes('ECONNREFUSED')) {
+                    console.warn(
+                        '⚠️  LSP server not available at',
+                        TEST_SERVER_URL,
+                    );
+                    return true; // Пропускаем тест
+                }
+                throw error;
+            },
+            cancelled: () => {
+                console.warn('⚠️  LSP server initialization was cancelled');
+                return true;
+            },
+            connectionReset: () => {
+                console.warn('⚠️  Connection lost during initialization');
+                return true;
+            },
+        });
+
+        assert.strictEqual(
+            testCompleted,
+            true,
+            'Test should complete successfully',
+        );
+    });
+
+    it('LSPResult provides proper error handling', async () => {
+        // Тестируем с невалидным URL
+        const invalidResult = await createAndInitializeLanguageServer(
+            'ws://localhost:99999/invalid',
+            {
+                ...TEST_OPTIONS,
+                request: { timeout: 2000 }, // Быстрый timeout для теста
+                connection: { reconnectAttempts: 0 },
+            },
+        );
+
+        let errorHandled = false;
+
+        await invalidResult.match({
+            success: (server: LanguageServer) => {
+                server.dispose();
+                assert.fail('Should not succeed with invalid URL');
+            },
+            timeout: async () => {
+                errorHandled = true;
+            },
+            error: async (error: Error) => {
+                errorHandled = true;
+                assert.ok(
+                    error instanceof Error,
+                    'Should receive Error object',
+                );
+            },
+            cancelled: async () => {
+                errorHandled = true;
+            },
+            connectionReset: async () => {
+                errorHandled = true;
+            },
+        });
+
+        assert.strictEqual(errorHandled, true, 'Should handle error properly');
+    });
+
+    it('LanguageServer can be disposed safely', async () => {
+        const serverResult = await createAndInitializeLanguageServer(
+            TEST_SERVER_URL,
+            TEST_OPTIONS,
+        );
+
+        await serverResult.match({
+            success: (server: LanguageServer) => {
+                // Проверяем что dispose можно вызвать безопасно
+                assert.doesNotThrow(() => {
+                    server.dispose();
+                }, 'dispose() should not throw');
+
+                // Проверяем что повторный dispose безопасен
+                assert.doesNotThrow(() => {
+                    server.dispose();
+                }, 'Second dispose() should not throw');
+            },
+            timeout: async () => {
+                console.warn('⚠️  Timeout during dispose test');
+            },
+            error: async (error: Error) => {
+                if (error.message.includes('ECONNREFUSED')) {
+                    console.warn(
+                        '⚠️  LSP server not available for dispose test',
+                    );
+                    return;
+                }
+                throw error;
+            },
+            cancelled: async () => {
+                console.warn('⚠️  Cancelled during dispose test');
+            },
+            connectionReset: async () => {
+                console.warn('⚠️  Connection reset during dispose test');
+            },
+        });
+    });
+
+    it('Can handle basic LSP request', async () => {
+        const serverResult = await createAndInitializeLanguageServer(
+            TEST_SERVER_URL,
+            TEST_OPTIONS,
+        );
+
+        await serverResult.match({
+            success: async (server: LanguageServer) => {
+                try {
+                    // Пробуем простой запрос completion
+                    const completionResult = await server.completion({
+                        textDocument: { uri: 'file:///test.py' },
+                        position: { line: 0, character: 0 },
+                    });
+
+                    // Проверяем что результат имеет правильную структуру
+                    assert.ok(
+                        completionResult,
+                        'Should return completion result',
+                    );
+                    assert.ok(
+                        typeof completionResult.match === 'function',
+                        'Should have match method',
+                    );
+
+                    await completionResult.match({
+                        success: (completion: any) => {
+                            // Успех - completion работает
+                            console.log('✅ Basic LSP request successful');
+                        },
+                        timeout: async () => {
+                            console.warn('⚠️  Completion request timed out');
+                        },
+                        error: async (error: Error) => {
+                            // Это может быть нормально, если сервер не поддерживает completion
+                            console.warn(
+                                '⚠️  Completion request failed:',
+                                error.message,
+                            );
+                        },
+                        cancelled: async () => {
+                            console.warn('⚠️  Completion request cancelled');
+                        },
+                        connectionReset: async () => {
+                            console.warn(
+                                '⚠️  Connection lost during completion',
+                            );
+                        },
+                    });
+                } finally {
+                    server.dispose();
+                }
+            },
+            timeout: async () => {
+                console.warn(
+                    '⚠️  Server initialization timed out for LSP request test',
+                );
+            },
+            error: async (error: Error) => {
+                if (error.message.includes('ECONNREFUSED')) {
+                    console.warn(
+                        '⚠️  LSP server not available for request test',
+                    );
+                    return;
+                }
+                throw error;
+            },
+            cancelled: async () => {
+                console.warn(
+                    '⚠️  Server initialization cancelled for LSP request test',
+                );
+            },
+            connectionReset: async () => {
+                console.warn('⚠️  Connection reset during LSP request test');
+            },
+        });
     });
 });

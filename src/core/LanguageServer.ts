@@ -55,7 +55,7 @@ import { Connection } from 'vscode-languageserver';
 import {
     ConnectionManager,
     ConnectionManagerOptions,
-} from './ConnectionManager';
+} from './ConnectionManager.js';
 import { RequestManager } from './RequestManager.js';
 import { SubscriptionManager } from './SubscriptionManager.js';
 import {
@@ -73,7 +73,7 @@ import {
     ExtractResult,
     LSPNotificationMethod,
     ExtractNotificationParams,
-} from '../types';
+} from '../types/index.js';
 
 /**
  * Main LanguageServer client with Zed architecture and Microsoft LSP integration
@@ -167,10 +167,12 @@ export class LanguageServer implements Disposable {
                 rootUri: this.options.rootUri,
                 capabilities: this.createDefaultClientCapabilities(),
                 initializationOptions: this.options.initializationOptions,
-                workspaceFolders: this.options.workspaceFolders?.map((uri) => ({
-                    uri,
-                    name: uri.split('/').pop() || 'workspace',
-                })),
+                workspaceFolders: this.options.workspaceFolders?.map(
+                    (uri: string) => ({
+                        uri,
+                        name: uri.split('/').pop() || 'workspace',
+                    }),
+                ),
                 ...params,
             };
 
@@ -595,7 +597,7 @@ export class LanguageServer implements Disposable {
                     LSPResult.connectionReset(
                         'Connection lost during initialization',
                     ),
-                error: (error) => {
+                error: (error: any) => {
                     server.dispose();
                     return LSPResult.error(error);
                 },

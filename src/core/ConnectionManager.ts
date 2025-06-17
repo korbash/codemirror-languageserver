@@ -13,18 +13,18 @@ import {
     Logger,
 } from 'vscode-languageserver-protocol';
 
-import { createConnection, Connection } from 'vscode-languageserver/node';
+import { createConnection, Connection } from 'vscode-languageserver/node.js';
 
 import {
     WebSocketMessageReader,
     WebSocketMessageReaderOptions,
-} from '../transport/WebSocketMessageReader';
+} from '../transport/WebSocketMessageReader.js';
 import {
     WebSocketMessageWriter,
     WebSocketMessageWriterOptions,
-} from '../transport/WebSocketMessageWriter';
+} from '../transport/WebSocketMessageWriter.js';
 
-import { ServerState as ConnectionState } from '../types';
+import { ServerState as ConnectionState } from '../types/index.js';
 
 /**
  * Reconnection configuration

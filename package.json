@@ -20,11 +20,11 @@
         "build": "tsc --project tsconfig.json",
         "format": "prettier --write .",
         "prepare": "npm run build",
-        "test": "mocha 'src/test/**/*.test.ts'",
-        "test:connection": "mocha --timeout 10000 'src/test/**/connection.test.ts'",
-        "test:lsp": "mocha --timeout 20000 'src/test/**/lsp.test.ts'",
-        "test:watch": "mocha --watch",
-        "sanity": "mocha --timeout 5000 'src/test/**/sanity.test.ts'"
+        "test": "npm run build && mocha 'dist/test/**/*.test.js'",
+        "test:connection": "npm run build && mocha --timeout 10000 'dist/test/**/connection.test.js'",
+        "test:lsp": "npm run build && mocha --timeout 20000 'dist/test/**/lsp.test.js'",
+        "test:watch": "npm run build && mocha --watch 'dist/test/**/*.test.js'",
+        "sanity": "npm run build && mocha --timeout 5000 'dist/test/**/sanity.test.js'"
     },
     "author": {
         "name": "Mahmud Ridwan",

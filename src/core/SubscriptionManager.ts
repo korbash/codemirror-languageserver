@@ -28,7 +28,7 @@ import {
     createSubscription,
     wrapDisposable,
     NotificationHandler,
-} from '../types';
+} from '../types/index.js';
 
 /**
  * Subscription entry tracking
