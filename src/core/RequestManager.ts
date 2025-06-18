@@ -39,6 +39,7 @@ interface PendingRequest {
     timeoutHandle: number;
     retryCount: number;
     maxRetries: number;
+    timedOut: boolean;
 }
 
 /**
@@ -372,8 +373,13 @@ export class RequestManager implements Disposable {
 
         // Setup timeout
         const timeoutHandle = setTimeout(() => {
-            cancellationSource.cancel();
-            this.recordTimeout(id, method);
+            // Only process timeout if request is still pending
+            if (this.pendingRequests.has(id)) {
+                const pendingRequest = this.pendingRequests.get(id)!;
+                pendingRequest.timedOut = true;
+                cancellationSource.cancel();
+                this.recordTimeout(id, method);
+            }
         }, options.timeout) as any;
 
         return {
@@ -385,6 +391,7 @@ export class RequestManager implements Disposable {
             timeoutHandle,
             retryCount: 0,
             maxRetries: options.retries,
+            timedOut: false,
         };
     }
 
@@ -424,10 +431,7 @@ export class RequestManager implements Disposable {
 
         // Check for timeout
         if (pendingRequest.cancellationSource.token.isCancellationRequested) {
-            if (
-                Date.now() - pendingRequest.startTime >=
-                pendingRequest.timeout
-            ) {
+            if (pendingRequest.timedOut) {
                 return LSPResult.timeout(
                     `Request timed out after ${pendingRequest.timeout}ms`,
                 );
@@ -545,15 +549,28 @@ export class RequestManager implements Disposable {
      */
     private recordTimeout(requestId: string, method: string): void {
         this.stats.timeoutRequests++;
-        this.emitMetrics({
-            method,
-            duration:
-                Date.now() - this.pendingRequests.get(requestId)!.startTime,
-            success: false,
-            error: 'timeout',
-            retryCount: this.pendingRequests.get(requestId)!.retryCount,
-            timestamp: Date.now(),
-        });
+
+        const pendingRequest = this.pendingRequests.get(requestId);
+        if (pendingRequest) {
+            this.emitMetrics({
+                method,
+                duration: Date.now() - pendingRequest.startTime,
+                success: false,
+                error: 'timeout',
+                retryCount: pendingRequest.retryCount,
+                timestamp: Date.now(),
+            });
+        } else {
+            // Fallback metrics when pending request is already cleaned up
+            this.emitMetrics({
+                method,
+                duration: 0, // Unknown duration
+                success: false,
+                error: 'timeout',
+                retryCount: 0, // Unknown retry count
+                timestamp: Date.now(),
+            });
+        }
     }
 
     /**
