@@ -42,7 +42,7 @@ import type {
     ProtocolNotificationType,
 } from 'vscode-languageserver-protocol';
 
-import type { LSPResult, LSPResultPromise } from './LSPResult.js';
+import type { LSPResult } from './LSPResult.js';
 import type { Subscription, CompositeSubscription } from './Subscription.js';
 
 // === Handler Types ===
@@ -154,6 +154,153 @@ export function isLSPResult<T>(value: unknown): value is LSPResult<T> {
 export function isSubscription(value: unknown): value is Subscription {
     return value instanceof Object && 'dispose' in value && 'isActive' in value;
 }
+
+// === Auto-generated LSP Method Constants ===
+// Complete enum extracted from vscode-languageserver-protocol
+// Total: 67 request methods + 22 notification methods = 89 methods
+
+// === LSP Request Methods ===
+export const LSPMethods = {
+    // CallHierarchy
+    CALLHIERARCHY_INCOMINGCALLS: 'callHierarchy/incomingCalls',
+    CALLHIERARCHY_OUTGOINGCALLS: 'callHierarchy/outgoingCalls',
+
+    // Client
+    CLIENT_REGISTERCAPABILITY: 'client/registerCapability',
+    CLIENT_UNREGISTERCAPABILITY: 'client/unregisterCapability',
+
+    // CodeAction
+    CODEACTION_RESOLVE: 'codeAction/resolve',
+
+    // CodeLens
+    CODELENS_RESOLVE: 'codeLens/resolve',
+
+    // CompletionItem
+    COMPLETIONITEM_RESOLVE: 'completionItem/resolve',
+
+    // DocumentLink
+    DOCUMENTLINK_RESOLVE: 'documentLink/resolve',
+
+    // Initialize
+    INITIALIZE: 'initialize',
+
+    // InlayHint
+    INLAYHINT_RESOLVE: 'inlayHint/resolve',
+
+    // Shutdown
+    SHUTDOWN: 'shutdown',
+
+    // TextDocument
+    TEXTDOCUMENT_CODEACTION: 'textDocument/codeAction',
+    TEXTDOCUMENT_CODELENS: 'textDocument/codeLens',
+    TEXTDOCUMENT_COLORPRESENTATION: 'textDocument/colorPresentation',
+    TEXTDOCUMENT_COMPLETION: 'textDocument/completion',
+    TEXTDOCUMENT_DECLARATION: 'textDocument/declaration',
+    TEXTDOCUMENT_DEFINITION: 'textDocument/definition',
+    TEXTDOCUMENT_DIAGNOSTIC: 'textDocument/diagnostic',
+    TEXTDOCUMENT_DOCUMENTCOLOR: 'textDocument/documentColor',
+    TEXTDOCUMENT_DOCUMENTHIGHLIGHT: 'textDocument/documentHighlight',
+    TEXTDOCUMENT_DOCUMENTLINK: 'textDocument/documentLink',
+    TEXTDOCUMENT_DOCUMENTSYMBOL: 'textDocument/documentSymbol',
+    TEXTDOCUMENT_FOLDINGRANGE: 'textDocument/foldingRange',
+    TEXTDOCUMENT_FORMATTING: 'textDocument/formatting',
+    TEXTDOCUMENT_HOVER: 'textDocument/hover',
+    TEXTDOCUMENT_IMPLEMENTATION: 'textDocument/implementation',
+    TEXTDOCUMENT_INLAYHINT: 'textDocument/inlayHint',
+    TEXTDOCUMENT_INLINECOMPLETION: 'textDocument/inlineCompletion',
+    TEXTDOCUMENT_INLINEVALUE: 'textDocument/inlineValue',
+    TEXTDOCUMENT_LINKEDEDITINGRANGE: 'textDocument/linkedEditingRange',
+    TEXTDOCUMENT_MONIKER: 'textDocument/moniker',
+    TEXTDOCUMENT_ONTYPEFORMATTING: 'textDocument/onTypeFormatting',
+    TEXTDOCUMENT_PREPARECALLHIERARCHY: 'textDocument/prepareCallHierarchy',
+    TEXTDOCUMENT_PREPARERENAME: 'textDocument/prepareRename',
+    TEXTDOCUMENT_PREPARETYPEHIERARCHY: 'textDocument/prepareTypeHierarchy',
+    TEXTDOCUMENT_RANGEFORMATTING: 'textDocument/rangeFormatting',
+    TEXTDOCUMENT_RANGESFORMATTING: 'textDocument/rangesFormatting',
+    TEXTDOCUMENT_REFERENCES: 'textDocument/references',
+    TEXTDOCUMENT_RENAME: 'textDocument/rename',
+    TEXTDOCUMENT_SELECTIONRANGE: 'textDocument/selectionRange',
+    TEXTDOCUMENT_SEMANTICTOKENS_FULL: 'textDocument/semanticTokens/full',
+    TEXTDOCUMENT_SEMANTICTOKENS_FULL_DELTA:
+        'textDocument/semanticTokens/full/delta',
+    TEXTDOCUMENT_SEMANTICTOKENS_RANGE: 'textDocument/semanticTokens/range',
+    TEXTDOCUMENT_SIGNATUREHELP: 'textDocument/signatureHelp',
+    TEXTDOCUMENT_TYPEDEFINITION: 'textDocument/typeDefinition',
+    TEXTDOCUMENT_WILLSAVEWAITUNTIL: 'textDocument/willSaveWaitUntil',
+
+    // TypeHierarchy
+    TYPEHIERARCHY_SUBTYPES: 'typeHierarchy/subtypes',
+    TYPEHIERARCHY_SUPERTYPES: 'typeHierarchy/supertypes',
+
+    // Window
+    WINDOW_SHOWDOCUMENT: 'window/showDocument',
+    WINDOW_SHOWMESSAGEREQUEST: 'window/showMessageRequest',
+    WINDOW_WORKDONEPROGRESS_CREATE: 'window/workDoneProgress/create',
+
+    // Workspace
+    WORKSPACE_APPLYEDIT: 'workspace/applyEdit',
+    WORKSPACE_CODELENS_REFRESH: 'workspace/codeLens/refresh',
+    WORKSPACE_CONFIGURATION: 'workspace/configuration',
+    WORKSPACE_DIAGNOSTIC: 'workspace/diagnostic',
+    WORKSPACE_DIAGNOSTIC_REFRESH: 'workspace/diagnostic/refresh',
+    WORKSPACE_EXECUTECOMMAND: 'workspace/executeCommand',
+    WORKSPACE_FOLDINGRANGE_REFRESH: 'workspace/foldingRange/refresh',
+    WORKSPACE_INLAYHINT_REFRESH: 'workspace/inlayHint/refresh',
+    WORKSPACE_INLINEVALUE_REFRESH: 'workspace/inlineValue/refresh',
+    WORKSPACE_SEMANTICTOKENS_REFRESH: 'workspace/semanticTokens/refresh',
+    WORKSPACE_SYMBOL: 'workspace/symbol',
+    WORKSPACE_WILLCREATEFILES: 'workspace/willCreateFiles',
+    WORKSPACE_WILLDELETEFILES: 'workspace/willDeleteFiles',
+    WORKSPACE_WILLRENAMEFILES: 'workspace/willRenameFiles',
+    WORKSPACE_WORKSPACEFOLDERS: 'workspace/workspaceFolders',
+
+    // WorkspaceSymbol
+    WORKSPACESYMBOL_RESOLVE: 'workspaceSymbol/resolve',
+} as const;
+
+// === LSP Notification Methods ===
+export const LSPNotifications = {
+    // Exit
+    EXIT: 'exit',
+
+    // Initialized
+    INITIALIZED: 'initialized',
+
+    // NotebookDocument
+    NOTEBOOKDOCUMENT_DIDCHANGE: 'notebookDocument/didChange',
+    NOTEBOOKDOCUMENT_DIDCLOSE: 'notebookDocument/didClose',
+    NOTEBOOKDOCUMENT_DIDOPEN: 'notebookDocument/didOpen',
+    NOTEBOOKDOCUMENT_DIDSAVE: 'notebookDocument/didSave',
+
+    // Telemetry
+    TELEMETRY_EVENT: 'telemetry/event',
+
+    // TextDocument
+    TEXTDOCUMENT_DIDCHANGE: 'textDocument/didChange',
+    TEXTDOCUMENT_DIDCLOSE: 'textDocument/didClose',
+    TEXTDOCUMENT_DIDOPEN: 'textDocument/didOpen',
+    TEXTDOCUMENT_DIDSAVE: 'textDocument/didSave',
+    TEXTDOCUMENT_PUBLISHDIAGNOSTICS: 'textDocument/publishDiagnostics',
+    TEXTDOCUMENT_WILLSAVE: 'textDocument/willSave',
+
+    // Window
+    WINDOW_LOGMESSAGE: 'window/logMessage',
+    WINDOW_SHOWMESSAGE: 'window/showMessage',
+    WINDOW_WORKDONEPROGRESS_CANCEL: 'window/workDoneProgress/cancel',
+
+    // Workspace
+    WORKSPACE_DIDCHANGECONFIGURATION: 'workspace/didChangeConfiguration',
+    WORKSPACE_DIDCHANGEWATCHEDFILES: 'workspace/didChangeWatchedFiles',
+    WORKSPACE_DIDCHANGEWORKSPACEFOLDERS: 'workspace/didChangeWorkspaceFolders',
+    WORKSPACE_DIDCREATEFILES: 'workspace/didCreateFiles',
+    WORKSPACE_DIDDELETEFILES: 'workspace/didDeleteFiles',
+    WORKSPACE_DIDRENAMEFILES: 'workspace/didRenameFiles',
+} as const;
+
+// === Type-safe method unions ===
+export type LSPMethodValue = (typeof LSPMethods)[keyof typeof LSPMethods];
+export type LSPNotificationValue =
+    (typeof LSPNotifications)[keyof typeof LSPNotifications];
 
 // === Utility Types ===
 export type LSPMethod = keyof LSPRequestMap;

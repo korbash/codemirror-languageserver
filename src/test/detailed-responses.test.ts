@@ -138,8 +138,8 @@ describe('Детальные ответы LSP сервера', () => {
                 TEST_SERVER_URL,
                 LSP_OPTIONS,
             );
-
-            await result.match({
+            result.isSuccess();
+            result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -163,7 +163,7 @@ describe('Детальные ответы LSP сервера', () => {
                         const completion =
                             await server.completion(completionParams);
 
-                        await completion.match({
+                        await completion.handleResult({
                             success: (result: any) => {
                                 console.log(
                                     '🎯 Позиция запроса: строка 1, символ 7 (после "import ")',
@@ -327,7 +327,7 @@ describe('Детальные ответы LSP сервера', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -351,7 +351,7 @@ describe('Детальные ответы LSP сервера', () => {
                         const completion =
                             await server.completion(completionParams);
 
-                        await completion.match({
+                        await completion.handleResult({
                             success: (result: any) => {
                                 console.log(
                                     '🎯 Позиция запроса: строка 52, символ 16 (после "person.")',
@@ -477,7 +477,7 @@ describe('Детальные ответы LSP сервера', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -498,7 +498,7 @@ describe('Детальные ответы LSP сервера', () => {
 
                         const hover = await server.hover(hoverParams);
 
-                        await hover.match({
+                        await hover.handleResult({
                             success: (result: any) => {
                                 console.log(
                                     '🎯 Позиция запроса: строка 18, символ 15 (функция calculate_fibonacci)',
@@ -616,7 +616,7 @@ describe('Детальные ответы LSP сервера', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -637,7 +637,7 @@ describe('Детальные ответы LSP сервера', () => {
 
                         const hover = await server.hover(hoverParams);
 
-                        await hover.match({
+                        await hover.handleResult({
                             success: (result: any) => {
                                 console.log(
                                     '🎯 Позиция запроса: строка 7, символ 10 (класс Person)',
@@ -749,7 +749,7 @@ describe('Детальные ответы LSP сервера', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -771,7 +771,7 @@ describe('Детальные ответы LSP сервера', () => {
                         const definition =
                             await server.definition(definitionParams);
 
-                        await definition.match({
+                        await definition.handleResult({
                             success: (result: any) => {
                                 console.log(
                                     '🎯 Позиция запроса: строка 58, символ 17 (вызов calculate_fibonacci)',
@@ -873,7 +873,7 @@ describe('Детальные ответы LSP сервера', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -898,7 +898,7 @@ describe('Детальные ответы LSP сервера', () => {
                         const references =
                             await server.references(referencesParams);
 
-                        await references.match({
+                        await references.handleResult({
                             success: (result: any) => {
                                 console.log(
                                     '🎯 Pozиция запроса: строка 18, символ 15 (функция calculate_fibonacci)',
@@ -1029,7 +1029,7 @@ describe('Детальные ответы LSP сервера', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -1056,7 +1056,7 @@ describe('Детальные ответы LSP сервера', () => {
                         const references =
                             await server.references(referencesParams);
 
-                        await references.match({
+                        await references.handleResult({
                             success: (result: any) => {
                                 console.log(
                                     '🎯 Позиция запроса: строка 50, символ 8 (переменная people)',

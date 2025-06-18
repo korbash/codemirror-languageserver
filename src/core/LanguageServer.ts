@@ -57,7 +57,6 @@ import {
 import { RequestManager } from './RequestManager.js';
 import { SubscriptionManager } from './SubscriptionManager.js';
 import {
-    wrapConnectionRequest,
     Subscription,
     CompositeSubscription,
     createSubscription,
@@ -70,6 +69,8 @@ import {
     ExtractResult,
     LSPNotificationMethod,
     ExtractNotificationParams,
+    LSPMethods,
+    LSPMethodValue,
 } from '../types/index.js';
 
 /**
@@ -174,16 +175,17 @@ export class LanguageServer implements Disposable {
             };
 
             const result = await this.requestManager.sendRequest(
-                InitializeRequest.type,
+                LSPMethods.INITIALIZE,
                 initParams,
                 { timeout: 30000 },
             );
 
-            result.match({
-                success: (initResult: InitializeResult) => {
-                    this.capabilities = initResult.capabilities;
+            result.handleResult({
+                success: (initResult: any) => {
+                    const result = initResult as InitializeResult;
+                    this.capabilities = result.capabilities;
                     this.setState(ServerState.Running);
-                    this.emitCapabilitiesChange(initResult.capabilities);
+                    this.emitCapabilitiesChange(result.capabilities);
                     this.log(
                         'info',
                         'Language server initialized successfully',
@@ -193,7 +195,7 @@ export class LanguageServer implements Disposable {
                     this.setState(ServerState.Error);
                 },
             });
-            return result;
+            return result as LSPResult<InitializeResult>;
         } catch (error) {
             this.setState(ServerState.Error);
             return LSPResult.error(
@@ -236,7 +238,7 @@ export class LanguageServer implements Disposable {
         options?: RequestOptions,
     ): Promise<LSPResult<CompletionList | CompletionItem[] | null>> {
         return this.requestManager.sendRequest(
-            CompletionRequest.type,
+            LSPMethods.TEXTDOCUMENT_COMPLETION,
             params,
             options,
         );
@@ -250,7 +252,7 @@ export class LanguageServer implements Disposable {
         options?: RequestOptions,
     ): Promise<LSPResult<Hover | null>> {
         return this.requestManager.sendRequest(
-            HoverRequest.type,
+            LSPMethods.TEXTDOCUMENT_HOVER,
             params,
             options,
         );
@@ -270,7 +272,7 @@ export class LanguageServer implements Disposable {
         >
     > {
         return this.requestManager.sendRequest(
-            DefinitionRequest.type,
+            LSPMethods.TEXTDOCUMENT_DEFINITION,
             params,
             options,
         );
@@ -284,7 +286,7 @@ export class LanguageServer implements Disposable {
         options?: RequestOptions,
     ): Promise<LSPResult<Location[] | null>> {
         return this.requestManager.sendRequest(
-            ReferencesRequest.type,
+            LSPMethods.TEXTDOCUMENT_REFERENCES,
             params,
             options,
         );
@@ -298,7 +300,7 @@ export class LanguageServer implements Disposable {
         options?: RequestOptions,
     ): Promise<LSPResult<DocumentSymbol[] | SymbolInformation[] | null>> {
         return this.requestManager.sendRequest(
-            DocumentSymbolRequest.type,
+            LSPMethods.TEXTDOCUMENT_DOCUMENTSYMBOL,
             params,
             options,
         );
@@ -316,11 +318,7 @@ export class LanguageServer implements Disposable {
             return LSPResult.error(new Error('No active connection'));
         }
 
-        return this.requestManager.sendRequest(
-            { method } as any,
-            params,
-            options,
-        );
+        return this.requestManager.sendRequest(method, params, options);
     }
 
     // === LSP Notification Methods ===
@@ -579,7 +577,7 @@ export class LanguageServer implements Disposable {
             const server = new LanguageServer(serverUri, options);
             const initResult = await server.initialize(initParams);
 
-            initResult.match({
+            initResult.handleResult({
                 success: () => {
                     // Server is ready to use
                 },

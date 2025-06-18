@@ -208,7 +208,7 @@ export function createManagedSubscription(
  *     }
  *   );
  *
- *   return serverResult.match({
+ *   return serverResult.handleResult({
  *     success: (server) => {
  *       console.log('LSP server ready!');
  *
@@ -249,7 +249,7 @@ export function createManagedSubscription(
  *     position: { line: 10, character: 5 }
  *   });
  *
- *   completionResult.match({
+ *   completionResult.handleResult({
  *     success: (completion) => {
  *       if (Array.isArray(completion)) {
  *         completion.forEach(item => console.log(item.label));

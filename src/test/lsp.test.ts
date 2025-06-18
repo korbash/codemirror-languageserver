@@ -68,7 +68,7 @@ describe('LSP Protocol Tests', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         // Open a test document
@@ -90,7 +90,7 @@ describe('LSP Protocol Tests', () => {
                         const completion =
                             await server.completion(completionParams);
 
-                        await completion.match({
+                        await completion.handleResult({
                             success: (result: any) => {
                                 console.log(
                                     '🔍 АВТОДОПОЛНЕНИЕ - ПОЛНЫЙ ОТВЕТ СЕРВЕРА:',
@@ -196,7 +196,7 @@ describe('LSP Protocol Tests', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -220,7 +220,7 @@ describe('LSP Protocol Tests', () => {
                                 position,
                             });
 
-                            await completion.match({
+                            await completion.handleResult({
                                 success: (result: any) => {
                                     console.log(
                                         `✅ Completion at ${position.line}:${position.character} successful`,
@@ -286,7 +286,7 @@ describe('LSP Protocol Tests', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -305,7 +305,7 @@ describe('LSP Protocol Tests', () => {
 
                         const hover = await server.hover(hoverParams);
 
-                        await hover.match({
+                        await hover.handleResult({
                             success: (result: any) => {
                                 console.log('🔍 HOVER - ПОЛНЫЙ ОТВЕТ СЕРВЕРА:');
                                 console.log('='.repeat(60));
@@ -400,7 +400,7 @@ describe('LSP Protocol Tests', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -420,7 +420,7 @@ describe('LSP Protocol Tests', () => {
                         const definition =
                             await server.definition(definitionParams);
 
-                        await definition.match({
+                        await definition.handleResult({
                             success: (result: any) => {
                                 if (result) {
                                     if (Array.isArray(result)) {
@@ -487,7 +487,7 @@ describe('LSP Protocol Tests', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -508,7 +508,7 @@ describe('LSP Protocol Tests', () => {
                         const references =
                             await server.references(referencesParams);
 
-                        await references.match({
+                        await references.handleResult({
                             success: (result: any) => {
                                 if (Array.isArray(result)) {
                                     console.log(
@@ -571,7 +571,7 @@ describe('LSP Protocol Tests', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         const documentUri = 'file:///lifecycle.py';
@@ -645,7 +645,7 @@ describe('LSP Protocol Tests', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         const documentUri = 'file:///rapid-changes.py';
@@ -705,7 +705,7 @@ describe('LSP Protocol Tests', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         const diagnosticsReceived: PublishDiagnosticsParams[] =
@@ -795,7 +795,7 @@ describe('LSP Protocol Tests', () => {
                 },
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         await server.notifyDidOpenTextDocument({
@@ -815,7 +815,7 @@ describe('LSP Protocol Tests', () => {
 
                         let timeoutHandled = false;
 
-                        await completion.match({
+                        await completion.handleResult({
                             success: () => {
                                 console.log(
                                     '✅ Request completed within timeout',
@@ -880,7 +880,7 @@ describe('LSP Protocol Tests', () => {
                 LSP_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         // Try completion with invalid position
@@ -889,7 +889,7 @@ describe('LSP Protocol Tests', () => {
                             position: { line: -1, character: -1 },
                         });
 
-                        await invalidCompletion.match({
+                        await invalidCompletion.handleResult({
                             success: () => {
                                 console.log(
                                     '✅ Invalid request succeeded (server handled gracefully)',

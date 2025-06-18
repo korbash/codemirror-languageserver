@@ -1,7 +1,6 @@
 import { describe, it } from 'mocha';
 import { RequestManager } from '../core/RequestManager.js';
-import { CancellationTokenSource } from '../index.js';
-import { RequestType } from 'vscode-languageserver-protocol';
+import { CancellationTokenSource, LSPMethods } from '../index.js';
 
 // Mock connection that simulates responses with configurable delays
 class MockConnection {
@@ -51,7 +50,7 @@ describe('RequestManager Timeout Tests', () => {
             requestManager.setConnection(mockConnection as any);
 
             const result = await requestManager.sendRequest(
-                { method: 'textDocument/completion' } as RequestType<any, any, any>,
+                LSPMethods.TEXTDOCUMENT_COMPLETION,
                 {
                     textDocument: { uri: 'test.py' },
                     position: { line: 0, character: 0 },
@@ -60,7 +59,7 @@ describe('RequestManager Timeout Tests', () => {
             );
 
             let testPassed = false;
-            await result.match({
+            await result.handleResult({
                 success: (data) => {
                     console.log('✅ Normal request succeeded');
                     testPassed = true;
@@ -88,7 +87,7 @@ describe('RequestManager Timeout Tests', () => {
 
             let timeoutDetected = false;
             const result = await requestManager.sendRequest(
-                { method: 'textDocument/completion' } as RequestType<any, any, any>,
+                LSPMethods.TEXTDOCUMENT_COMPLETION,
                 {
                     textDocument: { uri: 'test.py' },
                     position: { line: 0, character: 0 },
@@ -96,7 +95,7 @@ describe('RequestManager Timeout Tests', () => {
                 { timeout: 500, retries: 0 }, // Short timeout
             );
 
-            await result.match({
+            await result.handleResult({
                 success: (data) => {
                     console.log(
                         '✅ Timeout test request succeeded (unexpected):',
@@ -131,7 +130,7 @@ describe('RequestManager Timeout Tests', () => {
 
             // Start request
             const resultPromise = requestManager.sendRequest(
-                { method: 'textDocument/completion' } as RequestType<any, any, any>,
+                LSPMethods.TEXTDOCUMENT_COMPLETION,
                 {
                     textDocument: { uri: 'test.py' },
                     position: { line: 0, character: 0 },
@@ -151,7 +150,7 @@ describe('RequestManager Timeout Tests', () => {
 
             let cancellationDetected = false;
             const result = await resultPromise;
-            await result.match({
+            await result.handleResult({
                 success: (data) => {
                     console.log(
                         '✅ Cancellation test request succeeded (unexpected):',
@@ -187,7 +186,7 @@ describe('RequestManager Timeout Tests', () => {
 
             // This should timeout because response takes 600ms but timeout is 500ms
             const result = await requestManager.sendRequest(
-                { method: 'textDocument/completion' } as RequestType<any, any, any>,
+                LSPMethods.TEXTDOCUMENT_COMPLETION,
                 {
                     textDocument: { uri: 'test.py' },
                     position: { line: 0, character: 0 },
@@ -196,7 +195,7 @@ describe('RequestManager Timeout Tests', () => {
             );
 
             let timeoutDetected = false;
-            await result.match({
+            await result.handleResult({
                 success: (data) => {
                     console.log('✅ Race condition request succeeded:', data);
                 },
@@ -207,7 +206,9 @@ describe('RequestManager Timeout Tests', () => {
                     );
                 },
                 timeout: () => {
-                    console.log('⏰ Race condition request timed out correctly');
+                    console.log(
+                        '⏰ Race condition request timed out correctly',
+                    );
                     timeoutDetected = true;
                 },
                 cancelled: () => {
@@ -235,12 +236,12 @@ describe('RequestManager Timeout Tests', () => {
             // Make a few requests with different outcomes
             for (let i = 0; i < 3; i++) {
                 const result = await requestManager.sendRequest(
-                    { method: 'test/request' } as RequestType<any, any, any>,
+                    'test/request',
                     { test: i },
                     { timeout: i === 1 ? 50 : 1000, retries: 0 }, // Second request will timeout
                 );
 
-                await result.match({
+                await result.handleResult({
                     success: () => {},
                     error: () => {},
                     timeout: () => {},
@@ -273,7 +274,7 @@ describe('RequestManager Timeout Tests', () => {
             const promises = [];
             for (let i = 0; i < 5; i++) {
                 const promise = requestManager.sendRequest(
-                    { method: 'concurrent/test' } as RequestType<any, any, any>,
+                    'concurrent/test',
                     { requestId: i },
                     { timeout: 200, retries: 0 }, // All will timeout
                 );
@@ -284,7 +285,7 @@ describe('RequestManager Timeout Tests', () => {
             const results = await Promise.all(promises);
 
             for (const result of results) {
-                await result.match({
+                await result.handleResult({
                     success: () => {},
                     error: () => {},
                     timeout: () => {
@@ -294,7 +295,9 @@ describe('RequestManager Timeout Tests', () => {
                 });
             }
 
-            console.log(`✅ ${timeoutCount} concurrent requests timed out as expected`);
+            console.log(
+                `✅ ${timeoutCount} concurrent requests timed out as expected`,
+            );
 
             const stats = requestManager.getStats();
             if (stats.timeoutRequests >= timeoutCount) {
@@ -311,15 +314,16 @@ describe('RequestManager Timeout Tests', () => {
             const mockConnection = new MockConnection(2000);
             requestManager.setConnection(mockConnection as any);
 
-            const initialPendingCount = requestManager.getPendingRequests().length;
+            const initialPendingCount =
+                requestManager.getPendingRequests().length;
 
             const result = await requestManager.sendRequest(
-                { method: 'cleanup/test' } as RequestType<any, any, any>,
+                'cleanup/test',
                 { test: 'cleanup' },
                 { timeout: 100, retries: 0 },
             );
 
-            await result.match({
+            await result.handleResult({
                 success: () => {},
                 error: () => {},
                 timeout: () => {
@@ -331,7 +335,8 @@ describe('RequestManager Timeout Tests', () => {
             // Give some time for cleanup
             await new Promise((resolve) => setTimeout(resolve, 100));
 
-            const finalPendingCount = requestManager.getPendingRequests().length;
+            const finalPendingCount =
+                requestManager.getPendingRequests().length;
 
             if (finalPendingCount === initialPendingCount) {
                 console.log('✅ Resources cleaned up correctly after timeout');
@@ -351,24 +356,29 @@ describe('RequestManager Timeout Tests', () => {
 
             // Start a request that will timeout
             const resultPromise = requestManager.sendRequest(
-                { method: 'disposal/test' } as RequestType<any, any, any>,
+                'disposal/test',
                 { test: 'disposal' },
                 { timeout: 1000, retries: 0 },
             );
 
             // Dispose the manager before timeout
             setTimeout(() => {
-                console.log('🧹 Disposing RequestManager during pending timeout...');
+                console.log(
+                    '🧹 Disposing RequestManager during pending timeout...',
+                );
                 requestManager.dispose();
             }, 100);
 
             const result = await resultPromise;
-            await result.match({
+            await result.handleResult({
                 success: () => {
                     console.log('✅ Request succeeded despite disposal');
                 },
                 error: (err) => {
-                    console.log('❌ Request failed after disposal:', err.message);
+                    console.log(
+                        '❌ Request failed after disposal:',
+                        err.message,
+                    );
                 },
                 timeout: () => {
                     console.log('⏰ Request timed out after disposal');
@@ -378,7 +388,9 @@ describe('RequestManager Timeout Tests', () => {
                 },
             });
 
-            console.log('✅ Disposal during pending timeout handled gracefully');
+            console.log(
+                '✅ Disposal during pending timeout handled gracefully',
+            );
         });
     });
 });

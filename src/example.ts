@@ -96,7 +96,7 @@ async function basicLSPSetup(): Promise<LanguageServer | null> {
 
     // Use pattern matching for comprehensive error handling
     let server: LanguageServer | null = null;
-    serverResult.match({
+    serverResult.handleResult({
         success: (s) => {
             console.log('✅ LSP server initialized successfully!');
             console.log('Server capabilities:', s.getCapabilities());
@@ -202,7 +202,7 @@ async function makeLSPRequests(server: LanguageServer, documentUri: string) {
         },
     );
 
-    await completionResult.match({
+    await completionResult.handleResult({
         success: async (
             completion: CompletionList | CompletionItem[] | null,
         ) => {
@@ -242,7 +242,7 @@ async function makeLSPRequests(server: LanguageServer, documentUri: string) {
         position: { line: 5, character: 10 },
     });
 
-    await hoverResult.match({
+    await hoverResult.handleResult({
         success: async (hover: Hover | null) => {
             if (hover && hover.contents) {
                 console.log('💡 Hover information available');
@@ -281,7 +281,7 @@ async function makeLSPRequests(server: LanguageServer, documentUri: string) {
         position: { line: 15, character: 8 },
     });
 
-    await definitionResult.match({
+    await definitionResult.handleResult({
         success: async (definition: any) => {
             if (definition) {
                 if (Array.isArray(definition)) {
@@ -503,14 +503,14 @@ async function setupCompleteApplication() {
 
         // Shutdown server
         const shutdownResult = await server.shutdown();
-        shutdownResult.match({
+        shutdownResult.handleResult({
             success: () => console.log('✅ Server shutdown successfully'),
             error: (error: any) =>
                 console.error('❌ Server shutdown failed:', error.message),
             timeout: () => console.warn('⏰ Server shutdown timed out'),
             cancelled: () => console.log('🚫 Server shutdown was cancelled'),
             connectionReset: () =>
-                console.log('💔 Connection lost during shutdown'),
+                console.warn('🔌 Connection reset during shutdown'),
         });
 
         // Dispose server (releases all resources)
@@ -536,7 +536,7 @@ async function modernJavaScriptExample() {
         );
 
         let server: LanguageServer | null = null;
-        serverResult.match({
+        serverResult.handleResult({
             success: (s) => {
                 server = s;
             },
@@ -573,7 +573,7 @@ async function modernJavaScriptExample() {
             position: { line: 0, character: 0 },
         });
 
-        completion.match({
+        completion.handleResult({
             success: (items: any) => console.log('Completion successful'),
             error: (error: any) => console.error('Completion failed:', error),
             timeout: () => console.warn('Completion timed out'),

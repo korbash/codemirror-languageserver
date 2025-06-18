@@ -47,7 +47,7 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
             LSP_OPTIONS,
         );
 
-        await result.match({
+        await result.handleResult({
             success: async (server: LanguageServer) => {
                 console.log('✅ Сервер успешно инициализирован');
 
@@ -65,49 +65,78 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
                     console.log('✅ Документ открыт');
 
                     // Запрашиваем автодополнение
-                    console.log('🔍 Запрашиваем автодополнение после "import "...');
+                    console.log(
+                        '🔍 Запрашиваем автодополнение после "import "...',
+                    );
                     const completionParams: CompletionParams = {
                         textDocument: { uri: 'file:///demo.py' },
                         position: { line: 0, character: 7 }, // После "import "
                     };
 
-                    const completion = await server.completion(completionParams);
+                    const completion =
+                        await server.completion(completionParams);
                     console.log('📨 Получили ответ от сервера');
 
-                    await completion.match({
+                    await completion.handleResult({
                         success: (result: any) => {
                             console.log('\n' + '='.repeat(80));
                             console.log('🎉 УСПЕШНЫЙ ОТВЕТ ОТ СЕРВЕРА!');
                             console.log('='.repeat(80));
                             console.log('📦 Тип результата:', typeof result);
-                            console.log('📦 Является массивом:', Array.isArray(result));
+                            console.log(
+                                '📦 Является массивом:',
+                                Array.isArray(result),
+                            );
                             console.log('📦 Полный JSON ответ:');
                             console.log(JSON.stringify(result, null, 2));
                             console.log('='.repeat(80));
 
                             if (Array.isArray(result) && result.length > 0) {
-                                console.log(`\n📋 Найдено ${result.length} вариантов автодополнения:`);
+                                console.log(
+                                    `\n📋 Найдено ${result.length} вариантов автодополнения:`,
+                                );
                                 result.slice(0, 5).forEach((item, index) => {
-                                    console.log(`  ${index + 1}. ${item.label || item.insertText || JSON.stringify(item)}`);
+                                    console.log(
+                                        `  ${index + 1}. ${item.label || item.insertText || JSON.stringify(item)}`,
+                                    );
                                 });
-                            } else if (result && result.items && result.items.length > 0) {
-                                console.log(`\n📋 Найдено ${result.items.length} вариантов автодополнения:`);
-                                result.items.slice(0, 5).forEach((item: any, index: number) => {
-                                    console.log(`  ${index + 1}. ${item.label || item.insertText || JSON.stringify(item)}`);
-                                });
+                            } else if (
+                                result &&
+                                result.items &&
+                                result.items.length > 0
+                            ) {
+                                console.log(
+                                    `\n📋 Найдено ${result.items.length} вариантов автодополнения:`,
+                                );
+                                result.items
+                                    .slice(0, 5)
+                                    .forEach((item: any, index: number) => {
+                                        console.log(
+                                            `  ${index + 1}. ${item.label || item.insertText || JSON.stringify(item)}`,
+                                        );
+                                    });
                             } else {
-                                console.log('\n⚠️  Автодополнение не вернуло результатов');
+                                console.log(
+                                    '\n⚠️  Автодополнение не вернуло результатов',
+                                );
                                 console.log('Возможные причины:');
                                 console.log('- Позиция курсора некорректна');
-                                console.log('- Сервер не поддерживает автодополнение в данной позиции');
-                                console.log('- Контекст недостаточен для автодополнения');
+                                console.log(
+                                    '- Сервер не поддерживает автодополнение в данной позиции',
+                                );
+                                console.log(
+                                    '- Контекст недостаточен для автодополнения',
+                                );
                             }
                         },
                         timeout: async () => {
                             console.log('⏰ Таймаут автодополнения');
                         },
                         error: async (error: Error) => {
-                            console.log('❌ Ошибка автодополнения:', error.message);
+                            console.log(
+                                '❌ Ошибка автодополнения:',
+                                error.message,
+                            );
                             console.log('Стек ошибки:', error.stack);
                         },
                         cancelled: async () => {
@@ -117,7 +146,6 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
                             console.log('💔 Соединение сброшено');
                         },
                     });
-
                 } finally {
                     console.log('🧹 Закрываем соединение с сервером...');
                     server.dispose();
@@ -129,7 +157,10 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
             },
             error: async (error: Error) => {
                 if (error.message.includes('ECONNREFUSED')) {
-                    console.log('⚠️  LSP сервер недоступен на', TEST_SERVER_URL);
+                    console.log(
+                        '⚠️  LSP сервер недоступен на',
+                        TEST_SERVER_URL,
+                    );
                     console.log('Убедитесь, что сервер запущен и доступен');
                     return;
                 }
@@ -153,7 +184,7 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
             LSP_OPTIONS,
         );
 
-        await result.match({
+        await result.handleResult({
             success: async (server: LanguageServer) => {
                 console.log('✅ Сервер успешно инициализирован');
 
@@ -165,13 +196,15 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
                             uri: 'file:///hover_demo.py',
                             languageId: 'python',
                             version: 1,
-                            text: SIMPLE_PYTHON_CODE,
+                            text: PYTHON_CODE_WITH_FUNCTION,
                         },
                     });
                     console.log('✅ Документ открыт');
 
                     // Запрашиваем hover
-                    console.log('🔍 Запрашиваем hover для функции hello_world...');
+                    console.log(
+                        '🔍 Запрашиваем hover для функции hello_world...',
+                    );
                     const hoverParams: HoverParams = {
                         textDocument: { uri: 'file:///hover_demo.py' },
                         position: { line: 2, character: 8 }, // На имени функции "hello_world"
@@ -180,7 +213,7 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
                     const hover = await server.hover(hoverParams);
                     console.log('📨 Получили ответ hover от сервера');
 
-                    await hover.match({
+                    await hover.handleResult({
                         success: (result: any) => {
                             console.log('\n' + '='.repeat(80));
                             console.log('🎉 УСПЕШНЫЙ HOVER ОТВЕТ ОТ СЕРВЕРА!');
@@ -195,18 +228,33 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
                                 if (typeof result.contents === 'string') {
                                     console.log('  Текст:', result.contents);
                                 } else if (Array.isArray(result.contents)) {
-                                    result.contents.forEach((content: any, index: number) => {
-                                        console.log(`  Элемент ${index + 1}:`, content);
-                                    });
+                                    result.contents.forEach(
+                                        (content: any, index: number) => {
+                                            console.log(
+                                                `  Элемент ${index + 1}:`,
+                                                content,
+                                            );
+                                        },
+                                    );
                                 } else if (result.contents.value) {
-                                    console.log('  Язык:', result.contents.language || 'не указан');
-                                    console.log('  Значение:', result.contents.value);
+                                    console.log(
+                                        '  Язык:',
+                                        result.contents.language || 'не указан',
+                                    );
+                                    console.log(
+                                        '  Значение:',
+                                        result.contents.value,
+                                    );
                                 }
 
                                 if (result.range) {
                                     console.log('\n📍 Диапазон hover:');
-                                    console.log(`  Начало: строка ${result.range.start.line}, символ ${result.range.start.character}`);
-                                    console.log(`  Конец: строка ${result.range.end.line}, символ ${result.range.end.character}`);
+                                    console.log(
+                                        `  Начало: строка ${result.range.start.line}, символ ${result.range.start.character}`,
+                                    );
+                                    console.log(
+                                        `  Конец: строка ${result.range.end.line}, символ ${result.range.end.character}`,
+                                    );
                                 }
                             } else {
                                 console.log('\n⚠️  Hover не вернул содержимое');
@@ -225,7 +273,6 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
                             console.log('💔 Соединение сброшено');
                         },
                     });
-
                 } finally {
                     console.log('🧹 Закрываем соединение с сервером...');
                     server.dispose();
@@ -237,7 +284,10 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
             },
             error: async (error: Error) => {
                 if (error.message.includes('ECONNREFUSED')) {
-                    console.log('⚠️  LSP сервер недоступен на', TEST_SERVER_URL);
+                    console.log(
+                        '⚠️  LSP сервер недоступен на',
+                        TEST_SERVER_URL,
+                    );
                     return;
                 }
                 console.log('❌ Ошибка инициализации:', error.message);

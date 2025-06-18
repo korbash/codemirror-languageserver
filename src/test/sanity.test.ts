@@ -76,7 +76,7 @@ describe('Sanity Check - New LanguageServer API', () => {
             'Should have isSuccess method',
         );
 
-        serverResult.match({
+        serverResult.handleResult({
             success: (server: LanguageServer) => {
                 assert.ok(server, 'Should receive server instance');
                 assert.ok(
@@ -129,7 +129,7 @@ describe('Sanity Check - New LanguageServer API', () => {
 
         let errorHandled = false;
 
-        invalidResult.match({
+        invalidResult.handleResult({
             success: (server: LanguageServer) => {
                 server.dispose();
                 assert.fail('Should not succeed with invalid URL');
@@ -161,7 +161,7 @@ describe('Sanity Check - New LanguageServer API', () => {
             TEST_OPTIONS,
         );
 
-        serverResult.match({
+        serverResult.handleResult({
             success: (server: LanguageServer) => {
                 // Проверяем что dispose можно вызвать безопасно
                 assert.doesNotThrow(() => {
@@ -207,7 +207,7 @@ describe('Sanity Check - New LanguageServer API', () => {
         let serverInstance: LanguageServer | null = null;
 
         console.log('🔍 [DEBUG] Processing server result...');
-        serverResult.match({
+        serverResult.handleResult({
             success: (server: LanguageServer) => {
                 console.log('🔍 [DEBUG] Server initialized successfully');
                 serverInstance = server;

@@ -65,7 +65,7 @@ describe('Connection Management Tests', () => {
 
             let testPassed = false;
 
-            await result.match({
+            await result.handleResult({
                 success: (server: LanguageServer) => {
                     assert.ok(server, 'Initialized server should be available');
                     assert.ok(
@@ -117,7 +117,7 @@ describe('Connection Management Tests', () => {
 
             let errorHandled = false;
 
-            await result.match({
+            await result.handleResult({
                 success: (server: LanguageServer) => {
                     server.dispose();
                     assert.fail('Should not succeed with invalid URL');
@@ -159,7 +159,7 @@ describe('Connection Management Tests', () => {
 
             let timeoutReceived = false;
 
-            await result.match({
+            await result.handleResult({
                 success: (server: LanguageServer) => {
                     server.dispose();
                     assert.fail('Should timeout, not succeed');
@@ -214,7 +214,7 @@ describe('Connection Management Tests', () => {
                 DEFAULT_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: (server: LanguageServer) => {
                     // Проверяем что dispose работает без исключений
                     assert.doesNotThrow(() => {
@@ -264,7 +264,7 @@ describe('Connection Management Tests', () => {
 
             try {
                 for (const result of results) {
-                    await result.match({
+                    await result.handleResult({
                         success: (server: LanguageServer) => {
                             servers.push(server);
                         },
@@ -318,7 +318,7 @@ describe('Connection Management Tests', () => {
                 DEFAULT_OPTIONS,
             );
 
-            await result.match({
+            await result.handleResult({
                 success: async (server: LanguageServer) => {
                     try {
                         // Пробуем сделать запрос, который может не сработать если сервер отключится
@@ -327,7 +327,7 @@ describe('Connection Management Tests', () => {
                             position: { line: 0, character: 0 },
                         });
 
-                        await completion.match({
+                        await completion.handleResult({
                             success: async () => {
                                 console.log(
                                     '✅ Request succeeded despite potential disconnection',
@@ -392,7 +392,7 @@ describe('Connection Management Tests', () => {
 
                     let errorOccurred = false;
 
-                    await result.match({
+                    await result.handleResult({
                         success: (server: LanguageServer) => {
                             server.dispose();
                             // Если URL как-то сработал, это не ошибка теста

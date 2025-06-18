@@ -39,7 +39,7 @@ function logStep(step: string) {
 }
 
 describe('🐛 Отладка ответов LSP сервера', () => {
-    it('отладка автодополнения с полным логированием', async function() {
+    it('отладка автодополнения с полным логированием', async function () {
         this.timeout(15000);
 
         logSeparator('ОТЛАДКА АВТОДОПОЛНЕНИЯ');
@@ -51,7 +51,7 @@ describe('🐛 Отладка ответов LSP сервера', () => {
         );
 
         logStep('Шаг 2: Обработка результата инициализации');
-        await result.match({
+        await result.handleResult({
             success: async (server: LanguageServer) => {
                 console.log('✅ Сервер успешно инициализирован');
 
@@ -82,53 +82,85 @@ describe('🐛 Отладка ответов LSP сервера', () => {
                     logStep('Шаг 5: Отправка запроса автодополнения');
                     console.log('📤 Отправляем запрос на автодополнение...');
 
-                    const completion = await server.completion(completionParams);
+                    const completion =
+                        await server.completion(completionParams);
                     console.log('📥 Получен ответ от сервера');
 
                     logStep('Шаг 6: Обработка ответа автодополнения');
-                    await completion.match({
+                    await completion.handleResult({
                         success: (result: any) => {
                             logSeparator('УСПЕШНЫЙ ОТВЕТ АВТОДОПОЛНЕНИЯ');
 
                             console.log('📊 Анализ ответа:');
                             console.log(`   - Тип: ${typeof result}`);
-                            console.log(`   - Конструктор: ${result?.constructor?.name || 'undefined'}`);
-                            console.log(`   - Является массивом: ${Array.isArray(result)}`);
-                            console.log(`   - Является null: ${result === null}`);
-                            console.log(`   - Является undefined: ${result === undefined}`);
+                            console.log(
+                                `   - Конструктор: ${result?.constructor?.name || 'undefined'}`,
+                            );
+                            console.log(
+                                `   - Является массивом: ${Array.isArray(result)}`,
+                            );
+                            console.log(
+                                `   - Является null: ${result === null}`,
+                            );
+                            console.log(
+                                `   - Является undefined: ${result === undefined}`,
+                            );
 
                             console.log('\n📦 ПОЛНЫЙ JSON ОТВЕТ:');
                             try {
                                 console.log(JSON.stringify(result, null, 4));
                             } catch (e) {
                                 console.log('❌ Ошибка сериализации JSON:', e);
-                                console.log('🔍 Попытка вывода через console.log:');
+                                console.log(
+                                    '🔍 Попытка вывода через console.log:',
+                                );
                                 console.log(result);
                             }
 
                             console.log('\n🔍 ДЕТАЛЬНЫЙ АНАЛИЗ:');
                             if (result === null) {
-                                console.log('❌ Результат равен null - автодополнение не доступно');
+                                console.log(
+                                    '❌ Результат равен null - автодополнение не доступно',
+                                );
                             } else if (result === undefined) {
-                                console.log('❌ Результат undefined - возможная ошибка');
+                                console.log(
+                                    '❌ Результат undefined - возможная ошибка',
+                                );
                             } else if (Array.isArray(result)) {
-                                console.log(`✅ Результат - массив с ${result.length} элементами`);
+                                console.log(
+                                    `✅ Результат - массив с ${result.length} элементами`,
+                                );
                                 if (result.length > 0) {
                                     console.log('📋 Первые элементы:');
-                                    result.slice(0, 3).forEach((item, index) => {
-                                        console.log(`   ${index + 1}. ${JSON.stringify(item, null, 2)}`);
-                                    });
+                                    result
+                                        .slice(0, 3)
+                                        .forEach((item, index) => {
+                                            console.log(
+                                                `   ${index + 1}. ${JSON.stringify(item, null, 2)}`,
+                                            );
+                                        });
                                 } else {
                                     console.log('⚠️  Массив пустой');
                                 }
-                            } else if (typeof result === 'object' && result.items) {
-                                console.log(`✅ Результат - объект CompletionList с ${result.items.length} элементами`);
-                                console.log(`   isIncomplete: ${result.isIncomplete}`);
+                            } else if (
+                                typeof result === 'object' &&
+                                result.items
+                            ) {
+                                console.log(
+                                    `✅ Результат - объект CompletionList с ${result.items.length} элементами`,
+                                );
+                                console.log(
+                                    `   isIncomplete: ${result.isIncomplete}`,
+                                );
                                 if (result.items.length > 0) {
                                     console.log('📋 Первые элементы:');
-                                    result.items.slice(0, 3).forEach((item: any, index: number) => {
-                                        console.log(`   ${index + 1}. ${JSON.stringify(item, null, 2)}`);
-                                    });
+                                    result.items
+                                        .slice(0, 3)
+                                        .forEach((item: any, index: number) => {
+                                            console.log(
+                                                `   ${index + 1}. ${JSON.stringify(item, null, 2)}`,
+                                            );
+                                        });
                                 } else {
                                     console.log('⚠️  Массив items пустой');
                                 }
@@ -136,31 +168,43 @@ describe('🐛 Отладка ответов LSP сервера', () => {
                                 console.log('❓ Неожиданный формат результата');
                                 console.log('🔍 Свойства объекта:');
                                 if (typeof result === 'object') {
-                                    Object.keys(result).forEach(key => {
-                                        console.log(`   ${key}: ${typeof result[key]}`);
+                                    Object.keys(result).forEach((key) => {
+                                        console.log(
+                                            `   ${key}: ${typeof result[key]}`,
+                                        );
                                     });
                                 }
                             }
 
-                            console.log('\n✅ Обработка автодополнения завершена');
+                            console.log(
+                                '\n✅ Обработка автодополнения завершена',
+                            );
                         },
                         timeout: async () => {
-                            console.log('⏰ ТАЙМАУТ: Запрос автодополнения превысил время ожидания');
+                            console.log(
+                                '⏰ ТАЙМАУТ: Запрос автодополнения превысил время ожидания',
+                            );
                         },
                         error: async (error: Error) => {
                             logSeparator('ОШИБКА АВТОДОПОЛНЕНИЯ');
-                            console.log('❌ Тип ошибки:', error.constructor.name);
+                            console.log(
+                                '❌ Тип ошибки:',
+                                error.constructor.name,
+                            );
                             console.log('❌ Сообщение:', error.message);
                             console.log('❌ Стек:', error.stack);
                         },
                         cancelled: async () => {
-                            console.log('🚫 ОТМЕНА: Запрос автодополнения был отменен');
+                            console.log(
+                                '🚫 ОТМЕНА: Запрос автодополнения был отменен',
+                            );
                         },
                         connectionReset: async () => {
-                            console.log('💔 СБРОС СОЕДИНЕНИЯ: Соединение сброшено во время автодополнения');
+                            console.log(
+                                '💔 СБРОС СОЕДИНЕНИЯ: Соединение сброшено во время автодополнения',
+                            );
                         },
                     });
-
                 } catch (error) {
                     console.log('💥 Исключение в тесте:', error);
                 } finally {
@@ -170,30 +214,41 @@ describe('🐛 Отладка ответов LSP сервера', () => {
                 }
             },
             timeout: async () => {
-                console.log('⏰ ТАЙМАУТ ИНИЦИАЛИЗАЦИИ: Превышено время ожидания инициализации сервера');
+                console.log(
+                    '⏰ ТАЙМАУТ ИНИЦИАЛИЗАЦИИ: Превышено время ожидания инициализации сервера',
+                );
             },
             error: async (error: Error) => {
                 logSeparator('ОШИБКА ИНИЦИАЛИЗАЦИИ');
                 console.log('❌ Тип ошибки:', error.constructor.name);
                 console.log('❌ Сообщение:', error.message);
                 if (error.message.includes('ECONNREFUSED')) {
-                    console.log('🔌 LSP сервер недоступен на адресе:', TEST_SERVER_URL);
-                    console.log('💡 Убедитесь, что сервер запущен и слушает указанный порт');
+                    console.log(
+                        '🔌 LSP сервер недоступен на адресе:',
+                        TEST_SERVER_URL,
+                    );
+                    console.log(
+                        '💡 Убедитесь, что сервер запущен и слушает указанный порт',
+                    );
                     return; // Не бросаем ошибку для недоступного сервера
                 }
                 console.log('❌ Стек:', error.stack);
                 throw error;
             },
             cancelled: async () => {
-                console.log('🚫 ОТМЕНА ИНИЦИАЛИЗАЦИИ: Инициализация сервера была отменена');
+                console.log(
+                    '🚫 ОТМЕНА ИНИЦИАЛИЗАЦИИ: Инициализация сервера была отменена',
+                );
             },
             connectionReset: async () => {
-                console.log('💔 СБРОС ПРИ ИНИЦИАЛИЗАЦИИ: Соединение сброшено при инициализации');
+                console.log(
+                    '💔 СБРОС ПРИ ИНИЦИАЛИЗАЦИИ: Соединение сброшено при инициализации',
+                );
             },
         });
     });
 
-    it('отладка hover с полным логированием', async function() {
+    it('отладка hover с полным логированием', async function () {
         this.timeout(15000);
 
         logSeparator('ОТЛАДКА HOVER');
@@ -203,7 +258,7 @@ describe('🐛 Отладка ответов LSP сервера', () => {
             LSP_OPTIONS,
         );
 
-        await result.match({
+        await result.handleResult({
             success: async (server: LanguageServer) => {
                 console.log('✅ Сервер успешно инициализирован для hover');
 
@@ -229,15 +284,21 @@ describe('🐛 Отладка ответов LSP сервера', () => {
                     const hover = await server.hover(hoverParams);
                     console.log('📥 Получен ответ hover от сервера');
 
-                    await hover.match({
+                    await hover.handleResult({
                         success: (result: any) => {
                             logSeparator('УСПЕШНЫЙ ОТВЕТ HOVER');
 
                             console.log('📊 Анализ hover ответа:');
                             console.log(`   - Тип: ${typeof result}`);
-                            console.log(`   - Конструктор: ${result?.constructor?.name || 'undefined'}`);
-                            console.log(`   - Является null: ${result === null}`);
-                            console.log(`   - Является undefined: ${result === undefined}`);
+                            console.log(
+                                `   - Конструктор: ${result?.constructor?.name || 'undefined'}`,
+                            );
+                            console.log(
+                                `   - Является null: ${result === null}`,
+                            );
+                            console.log(
+                                `   - Является undefined: ${result === undefined}`,
+                            );
 
                             console.log('\n📦 ПОЛНЫЙ JSON ОТВЕТ HOVER:');
                             try {
@@ -250,25 +311,40 @@ describe('🐛 Отладка ответов LSP сервера', () => {
 
                             console.log('\n🔍 ДЕТАЛЬНЫЙ АНАЛИЗ HOVER:');
                             if (result === null) {
-                                console.log('❌ Hover результат null - информация недоступна');
+                                console.log(
+                                    '❌ Hover результат null - информация недоступна',
+                                );
                             } else if (result === undefined) {
                                 console.log('❌ Hover результат undefined');
-                            } else if (typeof result === 'object' && result.contents) {
+                            } else if (
+                                typeof result === 'object' &&
+                                result.contents
+                            ) {
                                 console.log('✅ Hover содержит информацию');
                                 console.log('📋 Содержимое contents:');
-                                console.log(JSON.stringify(result.contents, null, 2));
+                                console.log(
+                                    JSON.stringify(result.contents, null, 2),
+                                );
 
                                 if (result.range) {
                                     console.log('📍 Диапазон hover:');
-                                    console.log(`   Начало: ${result.range.start.line}:${result.range.start.character}`);
-                                    console.log(`   Конец: ${result.range.end.line}:${result.range.end.character}`);
+                                    console.log(
+                                        `   Начало: ${result.range.start.line}:${result.range.start.character}`,
+                                    );
+                                    console.log(
+                                        `   Конец: ${result.range.end.line}:${result.range.end.character}`,
+                                    );
                                 }
                             } else {
-                                console.log('❓ Неожиданный формат hover результата');
+                                console.log(
+                                    '❓ Неожиданный формат hover результата',
+                                );
                                 if (typeof result === 'object') {
                                     console.log('🔍 Доступные свойства:');
-                                    Object.keys(result).forEach(key => {
-                                        console.log(`   ${key}: ${typeof result[key]}`);
+                                    Object.keys(result).forEach((key) => {
+                                        console.log(
+                                            `   ${key}: ${typeof result[key]}`,
+                                        );
                                     });
                                 }
                             }
@@ -276,22 +352,28 @@ describe('🐛 Отладка ответов LSP сервера', () => {
                             console.log('\n✅ Обработка hover завершена');
                         },
                         timeout: async () => {
-                            console.log('⏰ ТАЙМАУТ HOVER: Запрос hover превысил время ожидания');
+                            console.log(
+                                '⏰ ТАЙМАУТ HOVER: Запрос hover превысил время ожидания',
+                            );
                         },
                         error: async (error: Error) => {
                             logSeparator('ОШИБКА HOVER');
-                            console.log('❌ Тип ошибки hover:', error.constructor.name);
+                            console.log(
+                                '❌ Тип ошибки hover:',
+                                error.constructor.name,
+                            );
                             console.log('❌ Сообщение hover:', error.message);
                             console.log('❌ Стек hover:', error.stack);
                         },
                         cancelled: async () => {
-                            console.log('🚫 ОТМЕНА HOVER: Запрос hover отменен');
+                            console.log(
+                                '🚫 ОТМЕНА HOVER: Запрос hover отменен',
+                            );
                         },
                         connectionReset: async () => {
                             console.log('💔 СБРОС СОЕДИНЕНИЯ HOVER');
                         },
                     });
-
                 } catch (error) {
                     console.log('💥 Исключение в hover тесте:', error);
                 } finally {

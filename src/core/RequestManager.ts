@@ -7,8 +7,6 @@
  */
 
 import {
-    RequestType,
-    ProtocolRequestType,
     CancellationToken,
     CancellationTokenSource,
     Disposable,
@@ -25,11 +23,11 @@ import { Connection } from 'vscode-languageserver';
 
 import {
     LSPResult,
-    wrapConnectionRequest,
     RequestOptions,
     Subscription,
     CompositeSubscription,
     createSubscription,
+    LSPMethodValue,
 } from '../types/index.js';
 
 /**
@@ -129,11 +127,10 @@ export class RequestManager implements Disposable {
 
     /**
      * Send a typed LSP request
+     * Accepts both standard LSP methods (from LSPMethods enum) and custom methods
      */
     async sendRequest<P, R>(
-        requestType:
-            | RequestType<P, R, any>
-            | ProtocolRequestType<P, R, any, any, any>,
+        method: LSPMethodValue,
         params: P,
         options: RequestOptions = {},
     ): Promise<LSPResult<R>> {
@@ -152,8 +149,6 @@ export class RequestManager implements Disposable {
             ...options,
         } as Required<RequestOptions>;
         const requestId = this.generateRequestId();
-        const method =
-            'method' in requestType ? requestType.method : String(requestType);
 
         // Create pending request tracking
         const pendingRequest = this.createPendingRequest(
@@ -169,7 +164,7 @@ export class RequestManager implements Disposable {
             // Send the request using Microsoft's Connection
             const startTime = Date.now();
             const result = await this.executeRequest(
-                requestType,
+                method,
                 params,
                 pendingRequest,
             );
@@ -182,7 +177,7 @@ export class RequestManager implements Disposable {
                 pendingRequest.retryCount,
             );
 
-            return LSPResult.success(result);
+            return LSPResult.success(result as R);
         } catch (error) {
             const duration = Date.now() - pendingRequest.startTime;
             return this.handleRequestError(
@@ -296,9 +291,7 @@ export class RequestManager implements Disposable {
      * Execute the actual request with retry logic
      */
     private async executeRequest<P, R>(
-        requestType:
-            | RequestType<P, R, any>
-            | ProtocolRequestType<P, R, any, any, any>,
+        method: LSPMethodValue | string,
         params: P,
         pendingRequest: PendingRequest,
     ): Promise<R> {
@@ -318,12 +311,12 @@ export class RequestManager implements Disposable {
 
                 // Send request using Microsoft Connection
                 const result = await this.connection!.sendRequest(
-                    requestType,
+                    method,
                     params,
                     pendingRequest.cancellationSource.token,
                 );
 
-                return result;
+                return result as R;
             } catch (error) {
                 lastError =
                     error instanceof Error ? error : new Error(String(error));

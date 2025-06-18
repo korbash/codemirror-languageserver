@@ -460,7 +460,7 @@ describe('Unified Error Handling', () => {
             const result = LSPResult.error(lspError);
 
             let capturedError: Error | undefined;
-            result.match({
+            result.handleResult({
                 success: () => assert.fail('Should not be success'),
                 error: (error) => {
                     capturedError = error;
