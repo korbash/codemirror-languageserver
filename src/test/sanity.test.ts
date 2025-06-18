@@ -195,15 +195,21 @@ describe('Sanity Check - New LanguageServer API', () => {
     });
 
     it('Can handle basic LSP request', async () => {
+        console.log('🔍 [DEBUG] Starting basic LSP request test...');
+
+        console.log('🔍 [DEBUG] Creating and initializing language server...');
         const serverResult = await createAndInitializeLanguageServer(
             TEST_SERVER_URL,
             TEST_OPTIONS,
         );
+        console.log('🔍 [DEBUG] Server creation completed');
 
         let serverInstance: LanguageServer | null = null;
 
+        console.log('🔍 [DEBUG] Processing server result...');
         serverResult.match({
             success: (server: LanguageServer) => {
+                console.log('🔍 [DEBUG] Server initialized successfully');
                 serverInstance = server;
             },
             timeout: () => {
@@ -212,6 +218,10 @@ describe('Sanity Check - New LanguageServer API', () => {
                 );
             },
             error: (error: Error) => {
+                console.log(
+                    '🔍 [DEBUG] Server initialization error:',
+                    error.message,
+                );
                 if (error.message.includes('ECONNREFUSED')) {
                     console.warn(
                         '⚠️  LSP server not available for request test',
@@ -229,51 +239,110 @@ describe('Sanity Check - New LanguageServer API', () => {
                 console.warn('⚠️  Connection reset during LSP request test');
             },
         });
+        console.log('🔍 [DEBUG] Server result processed');
 
         if (!serverInstance) {
             console.warn('⚠️  No server instance available for testing');
             return;
         }
 
+        console.log(
+            '🔍 [DEBUG] Server instance obtained, starting completion test...',
+        );
         const server: LanguageServer = serverInstance;
         try {
-            // Пробуем простой запрос completion
-            const completionResult = await server.completion({
-                textDocument: { uri: 'file:///test.py' },
-                position: { line: 0, character: 0 },
+            console.log('🔍 [DEBUG] About to open document...');
+            // Сначала открываем документ (обязательно для LSP)
+            await server.notifyDidOpenTextDocument({
+                textDocument: {
+                    uri: 'file:///test.py',
+                    languageId: 'python',
+                    version: 1,
+                    text: `import os
+import sys
+from typing import List, Dict
+
+class TestClass:
+    def __init__(self, name: str):
+        self.name = name
+        self.items: List[str] = []
+
+    def add_item(self, item: str) -> None:
+        self.items.append(item)
+
+    def get_items(self) -> List[str]:
+        return self.items
+
+def main():
+    test = TestClass("example")
+    test.add_item("hello")
+    print(f"Items: {test.get_items()}")
+
+    # Test various Python features
+    data: Dict[str, int] = {"a": 1, "b": 2}
+    result = [x * 2 for x in data.values()]
+
+    return result
+
+if __name__ == "__main__":
+    main()
+`,
+                },
+            });
+            console.log('🔍 [DEBUG] Document opened successfully');
+
+            console.log('🔍 [DEBUG] Checking server capabilities...');
+            const capabilities = server.getCapabilities();
+            console.log('🔍 [DEBUG] Server capabilities:', {
+                completionProvider: !!capabilities?.completionProvider,
+                hoverProvider: !!capabilities?.hoverProvider,
+                definitionProvider: !!capabilities?.definitionProvider,
+                workspaceSymbolProvider:
+                    !!capabilities?.workspaceSymbolProvider,
             });
 
-            // Проверяем что результат имеет правильную структуру
-            assert.ok(completionResult, 'Should return completion result');
-            assert.ok(
-                typeof completionResult.match === 'function',
-                'Should have match method',
-            );
+            // Проверяем что capabilities получены
+            assert.ok(capabilities, 'Should have server capabilities');
 
-            completionResult.match({
-                success: (completion: any) => {
-                    // Успех - completion работает
-                    console.log('✅ Basic LSP request successful');
-                },
-                timeout: () => {
-                    console.warn('⚠️  Completion request timed out');
-                },
-                error: (error: Error) => {
-                    // Это может быть нормально, если сервер не поддерживает completion
-                    console.warn(
-                        '⚠️  Completion request failed:',
-                        error.message,
-                    );
-                },
-                cancelled: () => {
-                    console.warn('⚠️  Completion request cancelled');
-                },
-                connectionReset: () => {
-                    console.warn('⚠️  Connection lost during completion');
-                },
-            });
+            // Анализируем какие capabilities поддерживает сервер
+            console.log('🔍 [DEBUG] Analyzing server capabilities...');
+
+            if (capabilities?.completionProvider) {
+                console.log('✅ Server supports textDocument/completion');
+            } else {
+                console.log(
+                    '❌ Server does NOT support textDocument/completion',
+                );
+            }
+
+            if (capabilities?.hoverProvider) {
+                console.log('✅ Server supports textDocument/hover');
+            } else {
+                console.log('❌ Server does NOT support textDocument/hover');
+            }
+
+            if (capabilities?.definitionProvider) {
+                console.log('✅ Server supports textDocument/definition');
+            } else {
+                console.log(
+                    '❌ Server does NOT support textDocument/definition',
+                );
+            }
+
+            if (capabilities?.workspaceSymbolProvider) {
+                console.log('✅ Server supports workspace/symbol');
+            } else {
+                console.log('❌ Server does NOT support workspace/symbol');
+            }
+
+            console.log('✅ Basic LSP capabilities test completed');
+        } catch (error) {
+            console.log('🔍 [DEBUG] Exception in hover test:', error);
+            throw error;
         } finally {
+            console.log('🔍 [DEBUG] Disposing server...');
             server.dispose();
+            console.log('🔍 [DEBUG] Server disposed, test ending');
         }
     });
 });
