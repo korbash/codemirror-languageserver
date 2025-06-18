@@ -92,10 +92,29 @@ describe('LSP Protocol Tests', () => {
 
                         await completion.match({
                             success: (result: any) => {
+                                console.log(
+                                    '🔍 АВТОДОПОЛНЕНИЕ - ПОЛНЫЙ ОТВЕТ СЕРВЕРА:',
+                                );
+                                console.log('='.repeat(60));
+                                console.log(JSON.stringify(result, null, 2));
+                                console.log('='.repeat(60));
+
                                 if (Array.isArray(result)) {
                                     console.log(
                                         `✅ Completion returned ${result.length} items`,
                                     );
+                                    if (result.length > 0) {
+                                        console.log(
+                                            '📝 Первые несколько элементов:',
+                                        );
+                                        result
+                                            .slice(0, 3)
+                                            .forEach((item, index) => {
+                                                console.log(
+                                                    `  ${index + 1}. ${item.label || item.insertText || JSON.stringify(item)}`,
+                                                );
+                                            });
+                                    }
                                 } else if (result && result.items) {
                                     console.log(
                                         `✅ Completion returned ${result.items.length} items`,
@@ -104,6 +123,20 @@ describe('LSP Protocol Tests', () => {
                                         Array.isArray(result.items),
                                         'Completion should have items array',
                                     );
+                                    if (result.items.length > 0) {
+                                        console.log(
+                                            '📝 Первые несколько элементов:',
+                                        );
+                                        result.items
+                                            .slice(0, 3)
+                                            .forEach(
+                                                (item: any, index: number) => {
+                                                    console.log(
+                                                        `  ${index + 1}. ${item.label || item.insertText || JSON.stringify(item)}`,
+                                                    );
+                                                },
+                                            );
+                                    }
                                 } else {
                                     console.log(
                                         '✅ Completion request successful (no items)',
@@ -274,10 +307,45 @@ describe('LSP Protocol Tests', () => {
 
                         await hover.match({
                             success: (result: any) => {
+                                console.log('🔍 HOVER - ПОЛНЫЙ ОТВЕТ СЕРВЕРА:');
+                                console.log('='.repeat(60));
+                                console.log(JSON.stringify(result, null, 2));
+                                console.log('='.repeat(60));
+
                                 if (result && result.contents) {
                                     console.log(
                                         '✅ Hover information available',
                                     );
+                                    console.log('📝 Содержимое hover:');
+                                    if (typeof result.contents === 'string') {
+                                        console.log(`  "${result.contents}"`);
+                                    } else if (Array.isArray(result.contents)) {
+                                        result.contents.forEach(
+                                            (content: any, index: number) => {
+                                                console.log(
+                                                    `  ${index + 1}. ${typeof content === 'string' ? content : JSON.stringify(content)}`,
+                                                );
+                                            },
+                                        );
+                                    } else if (result.contents.value) {
+                                        console.log(
+                                            `  Тип: ${result.contents.kind || 'unknown'}`,
+                                        );
+                                        console.log(
+                                            `  Значение: ${result.contents.value}`,
+                                        );
+                                    }
+
+                                    if (result.range) {
+                                        console.log('📍 Диапазон hover:');
+                                        console.log(
+                                            `  Начало: строка ${result.range.start.line}, символ ${result.range.start.character}`,
+                                        );
+                                        console.log(
+                                            `  Конец: строка ${result.range.end.line}, символ ${result.range.end.character}`,
+                                        );
+                                    }
+
                                     assert.ok(
                                         result.contents,
                                         'Hover should have contents',

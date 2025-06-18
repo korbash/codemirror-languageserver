@@ -23,6 +23,9 @@
         "test": "npm run build && mocha 'dist/test/**/*.test.js'",
         "test:connection": "npm run build && mocha --timeout 10000 'dist/test/**/connection.test.js'",
         "test:lsp": "npm run build && mocha --timeout 20000 'dist/test/**/lsp.test.js'",
+        "test:detailed": "npm run build && mocha --timeout 30000 'dist/test/**/detailed-responses.test.js'",
+        "test:demo": "npm run build && mocha --timeout 15000 'dist/test/**/demo-responses.test.js'",
+        "test:debug": "npm run build && mocha --timeout 20000 'dist/test/**/debug-responses.test.js'",
         "test:watch": "npm run build && mocha --watch 'dist/test/**/*.test.js'",
         "sanity": "npm run build && mocha --timeout 5000 'dist/test/**/sanity.test.js'"
     },
