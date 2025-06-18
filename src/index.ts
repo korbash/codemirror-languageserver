@@ -12,6 +12,19 @@
  * - Full integration with Microsoft's LSP infrastructure
  */
 
+// === Import ErrorConverter utilities ===
+import {
+    LSPError,
+    convertResponseError,
+    normalizeError,
+    isLSPError,
+    isCancellationError,
+    shouldNotRetryError,
+    getErrorMessage,
+    getErrorCode,
+    formatErrorForLogging,
+} from './types/ErrorConverter.js';
+
 // === Core Classes ===
 export { LanguageServer } from './core/LanguageServer.js';
 export { ConnectionManager } from './core/ConnectionManager.js';
@@ -92,6 +105,19 @@ export {
     SymbolKind,
 } from 'vscode-languageserver-protocol';
 
+// === Error Handling Utilities ===
+export {
+    LSPError,
+    convertResponseError,
+    normalizeError,
+    isLSPError,
+    isCancellationError,
+    shouldNotRetryError,
+    getErrorMessage,
+    getErrorCode,
+    formatErrorForLogging,
+};
+
 // === Convenience Factory Functions ===
 
 /**
@@ -148,12 +174,8 @@ export function wrapPromiseAsLSPResult<T>(
     return promise
         .then((result) => LSPResult.success(result))
         .catch((error) => {
-            if (error && typeof error === 'object' && 'code' in error) {
-                return LSPResult.fromResponseError(error);
-            }
-            return LSPResult.error(
-                error instanceof Error ? error : new Error(String(error)),
-            );
+            const normalizedError = normalizeError(error);
+            return LSPResult.error(normalizedError);
         });
 }
 

@@ -11,6 +11,7 @@ export * from 'vscode-languageserver-protocol';
 // === Our Extensions ===
 export * from './LSPResult.js';
 export * from './Subscription.js';
+export * from './ErrorConverter.js';
 
 // === Convenience type aliases ===
 import type {

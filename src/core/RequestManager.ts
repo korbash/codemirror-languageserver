@@ -11,10 +11,15 @@ import {
     ProtocolRequestType,
     CancellationToken,
     CancellationTokenSource,
-    ResponseError,
-    LSPErrorCodes,
     Disposable,
 } from 'vscode-languageserver-protocol';
+
+import {
+    normalizeError,
+    isCancellationError,
+    shouldNotRetryError,
+    isLSPError,
+} from '../types/ErrorConverter.js';
 
 import { Connection } from 'vscode-languageserver';
 
@@ -40,6 +45,7 @@ interface PendingRequest {
     retryCount: number;
     maxRetries: number;
     timedOut: boolean;
+    userTokenDisposable?: Disposable;
 }
 
 /**
@@ -353,21 +359,18 @@ export class RequestManager implements Disposable {
         options: Required<RequestOptions>,
     ): PendingRequest {
         const cancellationSource = new CancellationTokenSource();
+        let userTokenDisposable: Disposable | undefined;
 
-        // Combine user cancellation token with our own
+        // Link user cancellation token if provided
         if (options.cancellationToken) {
             if (options.cancellationToken.isCancellationRequested) {
                 cancellationSource.cancel();
             } else {
-                // Link the user's cancellation token to ours
-                const disposable =
+                // Simple one-way link: user token cancels our token
+                userTokenDisposable =
                     options.cancellationToken.onCancellationRequested(() => {
                         cancellationSource.cancel();
                     });
-                // Clean up the link when our token is cancelled
-                cancellationSource.token.onCancellationRequested(() => {
-                    disposable.dispose();
-                });
             }
         }
 
@@ -392,6 +395,7 @@ export class RequestManager implements Disposable {
             retryCount: 0,
             maxRetries: options.retries,
             timedOut: false,
+            userTokenDisposable,
         };
     }
 
@@ -405,29 +409,21 @@ export class RequestManager implements Disposable {
         duration: number,
         pendingRequest: PendingRequest,
     ): LSPResult<never> {
-        if (error instanceof ResponseError) {
-            this.recordFailure(
-                requestId,
-                method,
-                duration,
-                error.message,
-                pendingRequest.retryCount,
-            );
+        // Normalize error to Error type
+        const normalizedError = normalizeError(error, method);
 
-            // Convert Microsoft LSP errors to our result types
-            switch (error.code) {
-                case LSPErrorCodes.RequestCancelled:
-                case LSPErrorCodes.ServerCancelled:
-                    return LSPResult.cancelled(error.message);
-                case LSPErrorCodes.ContentModified:
-                    return LSPResult.error(error);
-                default:
-                    return LSPResult.error(error);
-            }
+        this.recordFailure(
+            requestId,
+            method,
+            duration,
+            normalizedError.message,
+            pendingRequest.retryCount,
+        );
+
+        // Check for cancellation errors (from LSP or JavaScript)
+        if (isCancellationError(normalizedError)) {
+            return LSPResult.cancelled(normalizedError.message);
         }
-
-        const errorMessage =
-            error instanceof Error ? error.message : String(error);
 
         // Check for timeout
         if (pendingRequest.cancellationSource.token.isCancellationRequested) {
@@ -440,16 +436,7 @@ export class RequestManager implements Disposable {
             }
         }
 
-        this.recordFailure(
-            requestId,
-            method,
-            duration,
-            errorMessage,
-            pendingRequest.retryCount,
-        );
-        return LSPResult.error(
-            error instanceof Error ? error : new Error(errorMessage),
-        );
+        return LSPResult.error(normalizedError);
     }
 
     /**
@@ -464,23 +451,8 @@ export class RequestManager implements Disposable {
             return true;
         }
 
-        if (error instanceof ResponseError) {
-            // Don't retry on these LSP errors
-            switch (error.code) {
-                case LSPErrorCodes.RequestCancelled:
-                case LSPErrorCodes.ServerCancelled:
-                case -32601: // MethodNotFound
-                case -32602: // InvalidParams
-                    return true;
-            }
-        }
-
-        // Don't retry on cancellation
-        if (error instanceof Error && error.message.includes('cancel')) {
-            return true;
-        }
-
-        return false;
+        // Use unified error checking
+        return shouldNotRetryError(error);
     }
 
     /**
@@ -503,6 +475,62 @@ export class RequestManager implements Disposable {
     }
 
     /**
+     * Record request outcome with unified metrics handling
+     */
+    private recordRequestOutcome(
+        type: 'success' | 'failure' | 'timeout' | 'cancelled',
+        requestId: string,
+        method: string,
+        duration?: number,
+        error?: string,
+        retryCount?: number,
+        reason?: string,
+    ): void {
+        const pendingRequest = this.pendingRequests.get(requestId);
+        const now = Date.now();
+
+        // Calculate duration and retry count with fallbacks
+        const actualDuration =
+            duration ?? (pendingRequest ? now - pendingRequest.startTime : 0);
+        const actualRetryCount =
+            retryCount ?? (pendingRequest?.retryCount || 0);
+
+        // Update stats
+        switch (type) {
+            case 'success':
+                this.stats.successfulRequests++;
+                this.updateResponseTime(actualDuration);
+                break;
+            case 'failure':
+                this.stats.failedRequests++;
+                this.updateResponseTime(actualDuration);
+                break;
+            case 'timeout':
+                this.stats.timeoutRequests++;
+                break;
+            case 'cancelled':
+                this.stats.cancelledRequests++;
+                break;
+        }
+
+        // Emit metrics
+        this.emitMetrics({
+            method,
+            duration: actualDuration,
+            success: type === 'success',
+            error:
+                error ||
+                (type === 'timeout'
+                    ? 'timeout'
+                    : type === 'cancelled'
+                      ? `cancelled: ${reason || 'unknown reason'}`
+                      : undefined),
+            retryCount: actualRetryCount,
+            timestamp: now,
+        });
+    }
+
+    /**
      * Record successful request
      */
     private recordSuccess(
@@ -511,15 +539,14 @@ export class RequestManager implements Disposable {
         duration: number,
         retryCount: number,
     ): void {
-        this.stats.successfulRequests++;
-        this.updateResponseTime(duration);
-        this.emitMetrics({
+        this.recordRequestOutcome(
+            'success',
+            requestId,
             method,
             duration,
-            success: true,
+            undefined,
             retryCount,
-            timestamp: Date.now(),
-        });
+        );
     }
 
     /**
@@ -532,45 +559,21 @@ export class RequestManager implements Disposable {
         error: string,
         retryCount: number,
     ): void {
-        this.stats.failedRequests++;
-        this.updateResponseTime(duration);
-        this.emitMetrics({
+        this.recordRequestOutcome(
+            'failure',
+            requestId,
             method,
             duration,
-            success: false,
             error,
             retryCount,
-            timestamp: Date.now(),
-        });
+        );
     }
 
     /**
      * Record timeout
      */
     private recordTimeout(requestId: string, method: string): void {
-        this.stats.timeoutRequests++;
-
-        const pendingRequest = this.pendingRequests.get(requestId);
-        if (pendingRequest) {
-            this.emitMetrics({
-                method,
-                duration: Date.now() - pendingRequest.startTime,
-                success: false,
-                error: 'timeout',
-                retryCount: pendingRequest.retryCount,
-                timestamp: Date.now(),
-            });
-        } else {
-            // Fallback metrics when pending request is already cleaned up
-            this.emitMetrics({
-                method,
-                duration: 0, // Unknown duration
-                success: false,
-                error: 'timeout',
-                retryCount: 0, // Unknown retry count
-                timestamp: Date.now(),
-            });
-        }
+        this.recordRequestOutcome('timeout', requestId, method);
     }
 
     /**
@@ -581,16 +584,15 @@ export class RequestManager implements Disposable {
         method: string,
         reason?: string,
     ): void {
-        this.stats.cancelledRequests++;
-        this.emitMetrics({
+        this.recordRequestOutcome(
+            'cancelled',
+            requestId,
             method,
-            duration:
-                Date.now() - this.pendingRequests.get(requestId)!.startTime,
-            success: false,
-            error: `cancelled: ${reason || 'unknown reason'}`,
-            retryCount: this.pendingRequests.get(requestId)!.retryCount,
-            timestamp: Date.now(),
-        });
+            undefined,
+            undefined,
+            undefined,
+            reason,
+        );
     }
 
     /**

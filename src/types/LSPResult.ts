@@ -3,7 +3,7 @@
  * Integrates with Microsoft's vscode-languageserver-protocol error types.
  */
 
-import { ResponseError, LSPErrorCodes } from 'vscode-languageserver-protocol';
+import { normalizeError } from './ErrorConverter.js';
 
 /**
  * Result states for LSP operations
@@ -23,7 +23,7 @@ export class LSPResult<T> {
     private constructor(
         private readonly state: ConnectionResult,
         private readonly value?: T,
-        private readonly error?: Error | ResponseError,
+        private readonly error?: Error,
         private readonly reason?: string,
     ) {}
 
@@ -73,30 +73,12 @@ export class LSPResult<T> {
     /**
      * Create an error result
      */
-    static error<T = never>(error: Error | ResponseError): LSPResult<T> {
+    static error<T = never>(error: Error): LSPResult<T> {
         return new LSPResult(
             ConnectionResult.Error,
             undefined,
             error,
         ) as LSPResult<T>;
-    }
-
-    /**
-     * Create result from Microsoft ResponseError
-     */
-    static fromResponseError<T>(error: ResponseError): LSPResult<T> {
-        switch (error.code) {
-            case LSPErrorCodes.RequestCancelled:
-                return LSPResult.cancelled(error.message);
-            case LSPErrorCodes.ServerCancelled:
-                return LSPResult.cancelled(
-                    `Server cancelled: ${error.message}`,
-                );
-            case LSPErrorCodes.ContentModified:
-                return LSPResult.error(error);
-            default:
-                return LSPResult.error(error);
-        }
     }
 
     /**
@@ -147,7 +129,7 @@ export class LSPResult<T> {
     /**
      * Get the error (returns undefined if not an error)
      */
-    getError(): Error | ResponseError | undefined {
+    getError(): Error | undefined {
         return this.error;
     }
 
@@ -174,7 +156,7 @@ export class LSPResult<T> {
         timeout?: (reason?: string) => void;
         connectionReset?: (reason?: string) => void;
         cancelled?: (reason?: string) => void;
-        error?: (error: Error | ResponseError) => void;
+        error?: (error: Error) => void;
     }): void {
         switch (this.state) {
             case ConnectionResult.Success:
@@ -303,9 +285,7 @@ export function wrapConnectionRequest<T>(
     return promise
         .then((result) => LSPResult.success(result))
         .catch((error) => {
-            if (error instanceof ResponseError) {
-                return LSPResult.fromResponseError(error);
-            }
-            return LSPResult.error(error);
+            const normalizedError = normalizeError(error);
+            return LSPResult.error(normalizedError);
         });
 }
