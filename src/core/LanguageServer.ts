@@ -10,6 +10,8 @@
 import {
     InitializeParams,
     InitializeResult,
+    ServerCapabilities,
+    ClientCapabilities,
     CompletionParams,
     CompletionList,
     CompletionItem,
@@ -29,11 +31,6 @@ import {
     PublishDiagnosticsParams,
     ShowMessageParams,
     LogMessageParams,
-    WorkDoneProgressCreateParams,
-    CancellationToken,
-    Disposable,
-    ServerCapabilities,
-    ClientCapabilities,
     InitializeRequest,
     CompletionRequest,
     HoverRequest,
@@ -47,9 +44,10 @@ import {
     PublishDiagnosticsNotification,
     ShowMessageNotification,
     LogMessageNotification,
-    WorkDoneProgressCreateRequest,
+    ResponseError,
 } from 'vscode-languageserver-protocol';
 
+import { LSPResult, ConnectionResult } from '../types/LSPResult.js';
 import { Connection } from 'vscode-languageserver';
 
 import {
@@ -59,7 +57,6 @@ import {
 import { RequestManager } from './RequestManager.js';
 import { SubscriptionManager } from './SubscriptionManager.js';
 import {
-    LSPResult,
     wrapConnectionRequest,
     Subscription,
     CompositeSubscription,
@@ -182,7 +179,7 @@ export class LanguageServer implements Disposable {
                 { timeout: 30000 },
             );
 
-            return result.match({
+            result.match({
                 success: (initResult: InitializeResult) => {
                     this.capabilities = initResult.capabilities;
                     this.setState(ServerState.Running);
@@ -191,21 +188,12 @@ export class LanguageServer implements Disposable {
                         'info',
                         'Language server initialized successfully',
                     );
-                    return LSPResult.success(initResult);
                 },
-                timeout: () =>
-                    LSPResult.timeout('Initialize request timed out'),
-                cancelled: () =>
-                    LSPResult.cancelled('Initialize request was cancelled'),
-                connectionReset: () =>
-                    LSPResult.connectionReset(
-                        'Connection lost during initialization',
-                    ),
                 error: (error: Error) => {
                     this.setState(ServerState.Error);
-                    return LSPResult.error(error);
                 },
             });
+            return result;
         } catch (error) {
             this.setState(ServerState.Error);
             return LSPResult.error(
@@ -536,7 +524,11 @@ export class LanguageServer implements Disposable {
         // Dispose all subscriptions
         this.subscriptions.forEach((sub) => {
             try {
-                sub.dispose();
+                if ('dispose' in sub && typeof sub.dispose === 'function') {
+                    sub.dispose();
+                } else if (Symbol.dispose in sub) {
+                    sub[Symbol.dispose]();
+                }
             } catch (error) {
                 // Ignore disposal errors
             }
@@ -587,21 +579,34 @@ export class LanguageServer implements Disposable {
             const server = new LanguageServer(serverUri, options);
             const initResult = await server.initialize(initParams);
 
-            return initResult.match({
-                success: () => LSPResult.success(server),
-                timeout: () =>
-                    LSPResult.timeout('Server initialization timed out'),
-                cancelled: () =>
-                    LSPResult.cancelled('Server initialization was cancelled'),
-                connectionReset: () =>
-                    LSPResult.connectionReset(
-                        'Connection lost during initialization',
-                    ),
+            initResult.match({
+                success: () => {
+                    // Server is ready to use
+                },
                 error: (error: any) => {
                     server.dispose();
-                    return LSPResult.error(error);
                 },
             });
+
+            // Transform LSPResult<InitializeResult> to LSPResult<LanguageServer>
+            switch (initResult.getState()) {
+                case ConnectionResult.Success:
+                    return LSPResult.success(server);
+                case ConnectionResult.Timeout:
+                    return LSPResult.timeout('Server initialization timed out');
+                case ConnectionResult.Cancelled:
+                    return LSPResult.cancelled(
+                        'Server initialization was cancelled',
+                    );
+                case ConnectionResult.ConnectionReset:
+                    return LSPResult.connectionReset(
+                        'Connection lost during initialization',
+                    );
+                case ConnectionResult.Error:
+                    return LSPResult.error(
+                        initResult.getError() || new Error('Unknown error'),
+                    );
+            }
         } catch (error) {
             return LSPResult.error(
                 error instanceof Error ? error : new Error(String(error)),
@@ -613,18 +618,24 @@ export class LanguageServer implements Disposable {
 
     private setupConnectionManagerHandlers(): void {
         // Handle connection state changes
-        this.subscriptions.push(
-            this.connectionManager.onStateChange((state) => {
+        const stateChangeDisposable = this.connectionManager.onStateChange(
+            (state) => {
                 this.setState(state);
-            }),
+            },
         );
+        this.subscriptions.push({
+            dispose: () => (stateChangeDisposable as any).dispose(),
+            [Symbol.dispose]: () => (stateChangeDisposable as any).dispose(),
+        } as any);
 
         // Handle connection errors
-        this.subscriptions.push(
-            this.connectionManager.onError((error) => {
-                this.emitError(error);
-            }),
-        );
+        const errorDisposable = this.connectionManager.onError((error) => {
+            this.emitError(error);
+        });
+        this.subscriptions.push({
+            dispose: () => (errorDisposable as any).dispose(),
+            [Symbol.dispose]: () => (errorDisposable as any).dispose(),
+        } as any);
     }
 
     private setupBuiltinNotificationHandlers(): void {

@@ -95,32 +95,30 @@ async function basicLSPSetup(): Promise<LanguageServer | null> {
     );
 
     // Use pattern matching for comprehensive error handling
-    return serverResult.match({
-        success: (server) => {
+    let server: LanguageServer | null = null;
+    serverResult.match({
+        success: (s) => {
             console.log('✅ LSP server initialized successfully!');
-            console.log('Server capabilities:', server.getCapabilities());
-            return server;
+            console.log('Server capabilities:', s.getCapabilities());
+            server = s;
         },
         timeout: () => {
             console.error('❌ LSP server initialization timed out');
-            return null;
         },
         error: (error) => {
             console.error(
                 '❌ LSP server initialization failed:',
                 error.message,
             );
-            return null;
         },
         cancelled: () => {
             console.log('⚠️ LSP server initialization was cancelled');
-            return null;
         },
         connectionReset: () => {
             console.error('💔 Connection lost during initialization');
-            return null;
         },
     });
+    return server;
 }
 
 /**
@@ -528,38 +526,49 @@ async function setupCompleteApplication() {
 async function modernJavaScriptExample() {
     // Using TC39 Symbol.dispose proposal for automatic cleanup
     try {
-        using server = await createAndInitializeLanguageServer(
+        const serverResult = await createAndInitializeLanguageServer(
             'ws://localhost:3000',
             {
-                name: 'Modern LSP Client',
+                name: 'TypeScript LSP',
                 rootUri: 'file:///workspace',
                 logging: { level: 'debug' },
             },
-        ).then((result) =>
-            result.match({
-                success: (server) => server,
-                error: () => {
-                    throw new Error('Failed to initialize server');
-                },
-                timeout: () => {
-                    throw new Error('Server initialization timed out');
-                },
-                cancelled: () => {
-                    throw new Error('Server initialization cancelled');
-                },
-                connectionReset: () => {
-                    throw new Error('Connection lost');
-                },
-            }),
         );
 
+        let server: LanguageServer | null = null;
+        serverResult.match({
+            success: (s) => {
+                server = s;
+            },
+            error: () => {
+                throw new Error('Failed to initialize server');
+            },
+            timeout: () => {
+                throw new Error('Server initialization timed out');
+            },
+            cancelled: () => {
+                throw new Error('Server initialization cancelled');
+            },
+            connectionReset: () => {
+                throw new Error('Connection lost');
+            },
+        });
+
+        if (!server) {
+            throw new Error('Failed to get server instance');
+        }
+
+        // TypeScript type assertion to help with disposal
+        const serverInstance: LanguageServer = server;
+        using serverDisposable = serverInstance;
+
         // Server will be automatically disposed when exiting this block
-        using diagnostics = server.onDiagnostics((params: any) => {
+        using diagnostics = serverInstance.onDiagnostics((params: any) => {
             console.log('Diagnostics received:', params.diagnostics.length);
         });
 
         // Make requests
-        const completion = await server.completion({
+        const completion = await serverInstance.completion({
             textDocument: { uri: 'file:///test.ts' },
             position: { line: 0, character: 0 },
         });

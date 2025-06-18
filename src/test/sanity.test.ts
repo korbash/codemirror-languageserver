@@ -76,7 +76,7 @@ describe('Sanity Check - New LanguageServer API', () => {
             'Should have isSuccess method',
         );
 
-        const testCompleted = await serverResult.match({
+        serverResult.match({
             success: (server: LanguageServer) => {
                 assert.ok(server, 'Should receive server instance');
                 assert.ok(
@@ -93,11 +93,9 @@ describe('Sanity Check - New LanguageServer API', () => {
                 );
 
                 server.dispose();
-                return true;
             },
             timeout: () => {
                 console.warn('⚠️  LSP server initialization timed out');
-                return true; // Не фейлим тест, это проблема окружения
             },
             error: (error: Error) => {
                 if (error.message.includes('ECONNREFUSED')) {
@@ -105,25 +103,17 @@ describe('Sanity Check - New LanguageServer API', () => {
                         '⚠️  LSP server not available at',
                         TEST_SERVER_URL,
                     );
-                    return true; // Пропускаем тест
+                    return; // Пропускаем тест
                 }
                 throw error;
             },
             cancelled: () => {
                 console.warn('⚠️  LSP server initialization was cancelled');
-                return true;
             },
             connectionReset: () => {
                 console.warn('⚠️  Connection lost during initialization');
-                return true;
             },
         });
-
-        assert.strictEqual(
-            testCompleted,
-            true,
-            'Test should complete successfully',
-        );
     });
 
     it('LSPResult provides proper error handling', async () => {
@@ -139,25 +129,25 @@ describe('Sanity Check - New LanguageServer API', () => {
 
         let errorHandled = false;
 
-        await invalidResult.match({
+        invalidResult.match({
             success: (server: LanguageServer) => {
                 server.dispose();
                 assert.fail('Should not succeed with invalid URL');
             },
-            timeout: async () => {
+            timeout: () => {
                 errorHandled = true;
             },
-            error: async (error: Error) => {
+            error: (error: Error) => {
                 errorHandled = true;
                 assert.ok(
                     error instanceof Error,
                     'Should receive Error object',
                 );
             },
-            cancelled: async () => {
+            cancelled: () => {
                 errorHandled = true;
             },
-            connectionReset: async () => {
+            connectionReset: () => {
                 errorHandled = true;
             },
         });
@@ -171,7 +161,7 @@ describe('Sanity Check - New LanguageServer API', () => {
             TEST_OPTIONS,
         );
 
-        await serverResult.match({
+        serverResult.match({
             success: (server: LanguageServer) => {
                 // Проверяем что dispose можно вызвать безопасно
                 assert.doesNotThrow(() => {
@@ -183,10 +173,10 @@ describe('Sanity Check - New LanguageServer API', () => {
                     server.dispose();
                 }, 'Second dispose() should not throw');
             },
-            timeout: async () => {
+            timeout: () => {
                 console.warn('⚠️  Timeout during dispose test');
             },
-            error: async (error: Error) => {
+            error: (error: Error) => {
                 if (error.message.includes('ECONNREFUSED')) {
                     console.warn(
                         '⚠️  LSP server not available for dispose test',
@@ -195,10 +185,10 @@ describe('Sanity Check - New LanguageServer API', () => {
                 }
                 throw error;
             },
-            cancelled: async () => {
+            cancelled: () => {
                 console.warn('⚠️  Cancelled during dispose test');
             },
-            connectionReset: async () => {
+            connectionReset: () => {
                 console.warn('⚠️  Connection reset during dispose test');
             },
         });
@@ -210,59 +200,18 @@ describe('Sanity Check - New LanguageServer API', () => {
             TEST_OPTIONS,
         );
 
-        await serverResult.match({
-            success: async (server: LanguageServer) => {
-                try {
-                    // Пробуем простой запрос completion
-                    const completionResult = await server.completion({
-                        textDocument: { uri: 'file:///test.py' },
-                        position: { line: 0, character: 0 },
-                    });
+        let serverInstance: LanguageServer | null = null;
 
-                    // Проверяем что результат имеет правильную структуру
-                    assert.ok(
-                        completionResult,
-                        'Should return completion result',
-                    );
-                    assert.ok(
-                        typeof completionResult.match === 'function',
-                        'Should have match method',
-                    );
-
-                    await completionResult.match({
-                        success: (completion: any) => {
-                            // Успех - completion работает
-                            console.log('✅ Basic LSP request successful');
-                        },
-                        timeout: async () => {
-                            console.warn('⚠️  Completion request timed out');
-                        },
-                        error: async (error: Error) => {
-                            // Это может быть нормально, если сервер не поддерживает completion
-                            console.warn(
-                                '⚠️  Completion request failed:',
-                                error.message,
-                            );
-                        },
-                        cancelled: async () => {
-                            console.warn('⚠️  Completion request cancelled');
-                        },
-                        connectionReset: async () => {
-                            console.warn(
-                                '⚠️  Connection lost during completion',
-                            );
-                        },
-                    });
-                } finally {
-                    server.dispose();
-                }
+        serverResult.match({
+            success: (server: LanguageServer) => {
+                serverInstance = server;
             },
-            timeout: async () => {
+            timeout: () => {
                 console.warn(
                     '⚠️  Server initialization timed out for LSP request test',
                 );
             },
-            error: async (error: Error) => {
+            error: (error: Error) => {
                 if (error.message.includes('ECONNREFUSED')) {
                     console.warn(
                         '⚠️  LSP server not available for request test',
@@ -271,14 +220,60 @@ describe('Sanity Check - New LanguageServer API', () => {
                 }
                 throw error;
             },
-            cancelled: async () => {
+            cancelled: () => {
                 console.warn(
                     '⚠️  Server initialization cancelled for LSP request test',
                 );
             },
-            connectionReset: async () => {
+            connectionReset: () => {
                 console.warn('⚠️  Connection reset during LSP request test');
             },
         });
+
+        if (!serverInstance) {
+            console.warn('⚠️  No server instance available for testing');
+            return;
+        }
+
+        const server: LanguageServer = serverInstance;
+        try {
+            // Пробуем простой запрос completion
+            const completionResult = await server.completion({
+                textDocument: { uri: 'file:///test.py' },
+                position: { line: 0, character: 0 },
+            });
+
+            // Проверяем что результат имеет правильную структуру
+            assert.ok(completionResult, 'Should return completion result');
+            assert.ok(
+                typeof completionResult.match === 'function',
+                'Should have match method',
+            );
+
+            completionResult.match({
+                success: (completion: any) => {
+                    // Успех - completion работает
+                    console.log('✅ Basic LSP request successful');
+                },
+                timeout: () => {
+                    console.warn('⚠️  Completion request timed out');
+                },
+                error: (error: Error) => {
+                    // Это может быть нормально, если сервер не поддерживает completion
+                    console.warn(
+                        '⚠️  Completion request failed:',
+                        error.message,
+                    );
+                },
+                cancelled: () => {
+                    console.warn('⚠️  Completion request cancelled');
+                },
+                connectionReset: () => {
+                    console.warn('⚠️  Connection lost during completion');
+                },
+            });
+        } finally {
+            server.dispose();
+        }
     });
 });

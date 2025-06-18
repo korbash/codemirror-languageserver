@@ -166,71 +166,62 @@ export class LSPResult<T> {
     }
 
     /**
-     * Rust-style pattern matching for result handling
+     * Pattern matching for result handling (side effects only)
+     * Only success handler is required, others are optional with default behavior
      */
-    match<R>(patterns: {
-        success: (value: T) => R;
-        timeout: (reason?: string) => R;
-        connectionReset: (reason?: string) => R;
-        cancelled: (reason?: string) => R;
-        error: (error: Error | ResponseError) => R;
-    }): R {
+    match(patterns: {
+        success: (value: T) => void;
+        timeout?: (reason?: string) => void;
+        connectionReset?: (reason?: string) => void;
+        cancelled?: (reason?: string) => void;
+        error?: (error: Error | ResponseError) => void;
+    }): void {
         switch (this.state) {
             case ConnectionResult.Success:
-                return patterns.success(this.value!);
+                patterns.success(this.value!);
+                break;
             case ConnectionResult.Timeout:
-                return patterns.timeout(this.reason);
+                if (patterns.timeout) {
+                    patterns.timeout(this.reason);
+                } else {
+                    // Default timeout behavior
+                    console.warn(
+                        `LSP timeout: ${this.reason || 'Unknown reason'}`,
+                    );
+                }
+                break;
             case ConnectionResult.ConnectionReset:
-                return patterns.connectionReset(this.reason);
+                if (patterns.connectionReset) {
+                    patterns.connectionReset(this.reason);
+                } else {
+                    // Default connection reset behavior
+                    console.warn(
+                        `LSP connection reset: ${this.reason || 'Unknown reason'}`,
+                    );
+                }
+                break;
             case ConnectionResult.Cancelled:
-                return patterns.cancelled(this.reason);
+                if (patterns.cancelled) {
+                    patterns.cancelled(this.reason);
+                } else {
+                    // Default cancelled behavior
+                    console.log(
+                        `LSP request cancelled: ${this.reason || 'Unknown reason'}`,
+                    );
+                }
+                break;
             case ConnectionResult.Error:
-                return patterns.error(this.error!);
+                if (patterns.error) {
+                    patterns.error(this.error!);
+                } else {
+                    // Default error behavior
+                    console.error(
+                        'LSP error:',
+                        this.error?.message || 'Unknown error',
+                    );
+                }
+                break;
         }
-    }
-
-    /**
-     * Map the successful value to a new type
-     */
-    map<U>(fn: (value: T) => U): LSPResult<U> {
-        if (this.state === ConnectionResult.Success) {
-            try {
-                return LSPResult.success(fn(this.value!));
-            } catch (error) {
-                return LSPResult.error(
-                    error instanceof Error ? error : new Error(String(error)),
-                );
-            }
-        }
-
-        return new LSPResult(
-            this.state,
-            undefined,
-            this.error,
-            this.reason,
-        ) as LSPResult<U>;
-    }
-
-    /**
-     * Chain operations that return LSPResult
-     */
-    flatMap<U>(fn: (value: T) => LSPResult<U>): LSPResult<U> {
-        if (this.state === ConnectionResult.Success) {
-            try {
-                return fn(this.value!);
-            } catch (error) {
-                return LSPResult.error(
-                    error instanceof Error ? error : new Error(String(error)),
-                );
-            }
-        }
-
-        return new LSPResult(
-            this.state,
-            undefined,
-            this.error,
-            this.reason,
-        ) as LSPResult<U>;
     }
 
     /**
@@ -246,26 +237,30 @@ export class LSPResult<T> {
      * Convert to Promise (throws on error states)
      */
     toPromise(): Promise<T> {
-        return this.match({
-            success: (value) => Promise.resolve(value),
-            timeout: (reason) =>
-                Promise.reject(
-                    new Error(`Request timeout: ${reason || 'Unknown reason'}`),
-                ),
-            connectionReset: (reason) =>
-                Promise.reject(
+        switch (this.state) {
+            case ConnectionResult.Success:
+                return Promise.resolve(this.value!);
+            case ConnectionResult.Timeout:
+                return Promise.reject(
                     new Error(
-                        `Connection reset: ${reason || 'Unknown reason'}`,
+                        `Request timeout: ${this.reason || 'Unknown reason'}`,
                     ),
-                ),
-            cancelled: (reason) =>
-                Promise.reject(
+                );
+            case ConnectionResult.ConnectionReset:
+                return Promise.reject(
                     new Error(
-                        `Request cancelled: ${reason || 'Unknown reason'}`,
+                        `Connection reset: ${this.reason || 'Unknown reason'}`,
                     ),
-                ),
-            error: (error) => Promise.reject(error),
-        });
+                );
+            case ConnectionResult.Cancelled:
+                return Promise.reject(
+                    new Error(
+                        `Request cancelled: ${this.reason || 'Unknown reason'}`,
+                    ),
+                );
+            case ConnectionResult.Error:
+                return Promise.reject(this.error!);
+        }
     }
 
     /**
