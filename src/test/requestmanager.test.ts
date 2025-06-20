@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha';
 import { RequestManager } from '../core/RequestManager.js';
-import { CancellationTokenSource, LSPMethods } from '../index.js';
+import { LSPMethods } from '../index.js';
 
 // Mock connection that simulates responses with configurable delays
 class MockConnection {
@@ -31,12 +31,15 @@ class MockConnection {
                 }
             }, this.responseDelay);
 
-            // Handle cancellation
+            // Handle cancellation (works with both AbortSignal and CancellationToken)
             if (cancellationToken) {
-                cancellationToken.onCancellationRequested(() => {
-                    clearTimeout(timeout);
-                    reject(new Error('Request was cancelled'));
-                });
+                if (cancellationToken.onCancellationRequested) {
+                    // CancellationToken interface
+                    cancellationToken.onCancellationRequested(() => {
+                        clearTimeout(timeout);
+                        reject(new Error('Request was cancelled'));
+                    });
+                }
             }
         });
     }
@@ -45,9 +48,8 @@ class MockConnection {
 describe('RequestManager Timeout Tests', () => {
     describe('Basic Timeout Handling', () => {
         it('should complete normal requests successfully', async () => {
-            const requestManager = new RequestManager();
             const mockConnection = new MockConnection(100); // Fast response
-            requestManager.setConnection(mockConnection as any);
+            const requestManager = new RequestManager(mockConnection as any);
 
             const result = await requestManager.sendRequest(
                 LSPMethods.TEXTDOCUMENT_COMPLETION,
@@ -77,13 +79,11 @@ describe('RequestManager Timeout Tests', () => {
 
             // Note: We don't assert here because the mock connection might not behave exactly like a real LSP server
             // The important thing is that the timeout mechanism doesn't interfere with normal operation
-            requestManager.dispose();
         });
 
         it('should handle request timeouts correctly', async () => {
-            const requestManager = new RequestManager();
             const mockConnection = new MockConnection(2000); // Slow response
-            requestManager.setConnection(mockConnection as any);
+            const requestManager = new RequestManager(mockConnection as any);
 
             let timeoutDetected = false;
             const result = await requestManager.sendRequest(
@@ -117,16 +117,13 @@ describe('RequestManager Timeout Tests', () => {
             if (timeoutDetected) {
                 console.log('✅ Timeout detection working correctly');
             }
-
-            requestManager.dispose();
         });
 
         it('should handle manual cancellation correctly', async () => {
-            const requestManager = new RequestManager();
             const mockConnection = new MockConnection(2000); // Slow response
-            requestManager.setConnection(mockConnection as any);
+            const requestManager = new RequestManager(mockConnection as any);
 
-            const cancellationSource = new CancellationTokenSource();
+            const abortController = new AbortController();
 
             // Start request
             const resultPromise = requestManager.sendRequest(
@@ -138,14 +135,14 @@ describe('RequestManager Timeout Tests', () => {
                 {
                     timeout: 5000,
                     retries: 0,
-                    cancellationToken: cancellationSource.token,
+                    abortSignal: abortController.signal,
                 },
             );
 
             // Cancel after 300ms
             setTimeout(() => {
                 console.log('🚫 Manually cancelling request...');
-                cancellationSource.cancel();
+                abortController.abort('User cancelled');
             }, 300);
 
             let cancellationDetected = false;
@@ -175,14 +172,11 @@ describe('RequestManager Timeout Tests', () => {
             if (cancellationDetected) {
                 console.log('✅ Manual cancellation working correctly');
             }
-
-            requestManager.dispose();
         });
 
         it('should handle race conditions between timeout and completion', async () => {
-            const requestManager = new RequestManager();
             const mockConnection = new MockConnection(600); // Medium response time
-            requestManager.setConnection(mockConnection as any);
+            const requestManager = new RequestManager(mockConnection as any);
 
             // This should timeout because response takes 600ms but timeout is 500ms
             const result = await requestManager.sendRequest(
@@ -222,21 +216,18 @@ describe('RequestManager Timeout Tests', () => {
             if (timeoutDetected) {
                 console.log('✅ Race condition handling working correctly');
             }
-
-            requestManager.dispose();
         });
     });
 
     describe('RequestManager Stats', () => {
         it('should track timeout statistics correctly', async () => {
-            const requestManager = new RequestManager();
             const mockConnection = new MockConnection(100);
-            requestManager.setConnection(mockConnection as any);
+            const requestManager = new RequestManager(mockConnection as any);
 
             // Make a few requests with different outcomes
             for (let i = 0; i < 3; i++) {
                 const result = await requestManager.sendRequest(
-                    'test/request',
+                    LSPMethods.TEXTDOCUMENT_COMPLETION,
                     { test: i },
                     { timeout: i === 1 ? 50 : 1000, retries: 0 }, // Second request will timeout
                 );
@@ -254,27 +245,23 @@ describe('RequestManager Timeout Tests', () => {
                 total: stats.totalRequests,
                 successful: stats.successfulRequests,
                 failed: stats.failedRequests,
-                timeout: stats.timeoutRequests,
                 cancelled: stats.cancelledRequests,
             });
 
-            if (stats.timeoutRequests > 0) {
+            if (stats.failedRequests > 0) {
                 console.log('✅ Timeout stats are being tracked correctly');
             }
-
-            requestManager.dispose();
         });
 
         it('should handle multiple concurrent timeout requests', async () => {
-            const requestManager = new RequestManager();
             const mockConnection = new MockConnection(1000); // Medium response time
-            requestManager.setConnection(mockConnection as any);
+            const requestManager = new RequestManager(mockConnection as any);
 
             // Start multiple requests that will timeout
             const promises = [];
             for (let i = 0; i < 5; i++) {
                 const promise = requestManager.sendRequest(
-                    'concurrent/test',
+                    LSPMethods.TEXTDOCUMENT_COMPLETION,
                     { requestId: i },
                     { timeout: 200, retries: 0 }, // All will timeout
                 );
@@ -298,28 +285,24 @@ describe('RequestManager Timeout Tests', () => {
             console.log(
                 `✅ ${timeoutCount} concurrent requests timed out as expected`,
             );
-
             const stats = requestManager.getStats();
-            if (stats.timeoutRequests >= timeoutCount) {
+            if (stats.failedRequests >= timeoutCount) {
                 console.log('✅ Concurrent timeout stats tracked correctly');
             }
-
-            requestManager.dispose();
         });
     });
 
     describe('Cleanup and Resource Management', () => {
         it('should clean up resources after timeout', async () => {
-            const requestManager = new RequestManager();
             const mockConnection = new MockConnection(2000);
-            requestManager.setConnection(mockConnection as any);
+            const requestManager = new RequestManager(mockConnection as any);
 
             const initialPendingCount =
-                requestManager.getPendingRequests().length;
+                requestManager.getPendingRequestIds().length;
 
             const result = await requestManager.sendRequest(
-                'cleanup/test',
-                { test: 'cleanup' },
+                LSPMethods.TEXTDOCUMENT_HOVER,
+                {},
                 { timeout: 100, retries: 0 },
             );
 
@@ -336,7 +319,7 @@ describe('RequestManager Timeout Tests', () => {
             await new Promise((resolve) => setTimeout(resolve, 100));
 
             const finalPendingCount =
-                requestManager.getPendingRequests().length;
+                requestManager.getPendingRequestIds().length;
 
             if (finalPendingCount === initialPendingCount) {
                 console.log('✅ Resources cleaned up correctly after timeout');
@@ -345,52 +328,46 @@ describe('RequestManager Timeout Tests', () => {
                     `❌ Resource leak detected: ${finalPendingCount - initialPendingCount} pending requests not cleaned up`,
                 );
             }
-
-            requestManager.dispose();
         });
 
-        it('should handle disposal during pending timeouts', async () => {
-            const requestManager = new RequestManager();
+        it('should handle request cancellation by ID', async () => {
             const mockConnection = new MockConnection(2000);
-            requestManager.setConnection(mockConnection as any);
+            const requestManager = new RequestManager(mockConnection as any);
 
-            // Start a request that will timeout
+            // Start a request that will be cancelled
             const resultPromise = requestManager.sendRequest(
-                'disposal/test',
-                { test: 'disposal' },
+                LSPMethods.TEXTDOCUMENT_DEFINITION,
+                {},
                 { timeout: 1000, retries: 0 },
             );
 
-            // Dispose the manager before timeout
-            setTimeout(() => {
-                console.log(
-                    '🧹 Disposing RequestManager during pending timeout...',
+            // Get pending request IDs and cancel one
+            const pendingIds = requestManager.getPendingRequestIds();
+            if (pendingIds.length > 0) {
+                const cancelled = requestManager.cancelRequest(
+                    pendingIds[0],
+                    'Test cancellation',
                 );
-                requestManager.dispose();
-            }, 100);
+                console.log('✅ Request cancelled by ID:', cancelled);
+            }
 
             const result = await resultPromise;
             await result.handleResult({
                 success: () => {
-                    console.log('✅ Request succeeded despite disposal');
+                    console.log('✅ Request succeeded');
                 },
                 error: (err) => {
-                    console.log(
-                        '❌ Request failed after disposal:',
-                        err.message,
-                    );
+                    console.log('❌ Request failed:', err.message);
                 },
                 timeout: () => {
-                    console.log('⏰ Request timed out after disposal');
+                    console.log('⏰ Request timed out');
                 },
                 cancelled: () => {
-                    console.log('🚫 Request cancelled due to disposal');
+                    console.log('🚫 Request cancelled as expected');
                 },
             });
 
-            console.log(
-                '✅ Disposal during pending timeout handled gracefully',
-            );
+            console.log('✅ Request cancellation by ID handled correctly');
         });
     });
 });

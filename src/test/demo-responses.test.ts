@@ -196,7 +196,7 @@ describe('🎯 Демонстрация ответов LSP сервера', () =
                             uri: 'file:///hover_demo.py',
                             languageId: 'python',
                             version: 1,
-                            text: PYTHON_CODE_WITH_FUNCTION,
+                            text: SIMPLE_PYTHON_CODE,
                         },
                     });
                     console.log('✅ Документ открыт');

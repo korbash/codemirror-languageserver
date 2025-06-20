@@ -78,8 +78,10 @@ export interface LSPNotificationMap {
 // === Options Types ===
 export interface RequestOptions {
     timeout?: number;
-    cancellationToken?: CancellationToken;
+    abortSignal?: AbortSignal;
     retries?: number;
+    retryCoefficient?: number; // koff - exponential backoff multiplier
+    firstTimeout?: number; // base timeout for retry calculation
 }
 
 export interface LanguageServerOptions {

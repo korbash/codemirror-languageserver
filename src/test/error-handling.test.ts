@@ -413,8 +413,26 @@ describe('Unified Error Handling', () => {
             );
             const result = LSPResult.error(lspError);
 
-            assert.ok(result.isError());
-            assert.strictEqual(result.getError(), lspError);
+            let errorHandled = false;
+            result.handleResult({
+                success: () => {
+                    assert.fail('Should not be success');
+                },
+                error: (error) => {
+                    errorHandled = true;
+                    assert.strictEqual(error, lspError);
+                },
+                timeout: () => {
+                    assert.fail('Should not be timeout');
+                },
+                cancelled: () => {
+                    assert.fail('Should not be cancelled');
+                },
+                connectionReset: () => {
+                    assert.fail('Should not be connection reset');
+                },
+            });
+            assert.ok(errorHandled, 'Error handler should have been called');
         });
 
         it('should work with converted ResponseError', () => {
@@ -425,14 +443,34 @@ describe('Unified Error Handling', () => {
             );
             const result = LSPResult.error(normalizedError);
 
-            assert.ok(result.isError());
-            const error = result.getError();
-            assert.ok(isLSPError(error));
-            if (isLSPError(error)) {
-                assert.strictEqual(error.code, ErrorCodes.MethodNotFound);
-                assert.strictEqual(error.message, 'Method not found');
-                assert.strictEqual(error.method, 'test/method');
-            }
+            let errorHandled = false;
+            result.handleResult({
+                success: () => {
+                    assert.fail('Should not be success');
+                },
+                error: (error) => {
+                    errorHandled = true;
+                    assert.ok(isLSPError(error));
+                    if (isLSPError(error)) {
+                        assert.strictEqual(
+                            error.code,
+                            ErrorCodes.MethodNotFound,
+                        );
+                        assert.strictEqual(error.method, 'test/method');
+                        assert.strictEqual(error.message, 'Method not found');
+                    }
+                },
+                timeout: () => {
+                    assert.fail('Should not be timeout');
+                },
+                cancelled: () => {
+                    assert.fail('Should not be cancelled');
+                },
+                connectionReset: () => {
+                    assert.fail('Should not be connection reset');
+                },
+            });
+            assert.ok(errorHandled, 'Error handler should have been called');
         });
 
         it('should handle cancellation errors correctly', () => {

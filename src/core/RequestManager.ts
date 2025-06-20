@@ -1,199 +1,105 @@
 /**
- * Request Manager for LSP operations with Zed-style timeout and cancellation.
- *
- * This class manages LSP requests using Microsoft's Connection infrastructure
- * while adding Zed-style improvements for timeout handling, cancellation,
- * performance monitoring, and result wrapping.
+ * Simplified RequestManager - only stats and cancellation by ID
  */
-
-import {
-    CancellationToken,
-    CancellationTokenSource,
-    Disposable,
-} from 'vscode-languageserver-protocol';
-
-import {
-    normalizeError,
-    isCancellationError,
-    shouldNotRetryError,
-    isLSPError,
-} from '../types/ErrorConverter.js';
 
 import { Connection } from 'vscode-languageserver';
-
+import { LSPResult, LSPMethodValue, RequestOptions } from '../types/index.js';
 import {
-    LSPResult,
-    RequestOptions,
-    Subscription,
-    CompositeSubscription,
-    createSubscription,
-    LSPMethodValue,
-} from '../types/index.js';
+    normalizeError,
+    shouldNotRetryError,
+} from '../types/ErrorConverter.js';
 
-/**
- * Pending request tracking
- */
 interface PendingRequest {
     id: string;
     method: string;
-    startTime: number;
-    timeout: number;
-    cancellationSource: CancellationTokenSource;
-    timeoutHandle: number;
+    abortController: AbortController;
     retryCount: number;
-    maxRetries: number;
-    timedOut: boolean;
-    userTokenDisposable?: Disposable;
 }
 
-/**
- * Request statistics for monitoring
- */
 export interface RequestStats {
     totalRequests: number;
     successfulRequests: number;
     failedRequests: number;
-    timeoutRequests: number;
     cancelledRequests: number;
-    averageResponseTime: number;
-    requestsByMethod: Record<string, number>;
 }
 
-/**
- * Request performance metrics
- */
-interface RequestMetrics {
-    method: string;
-    duration: number;
-    success: boolean;
-    error?: string;
-    retryCount: number;
-    timestamp: number;
-}
-
-/**
- * Default request configuration
- */
-const DEFAULT_REQUEST_OPTIONS: Required<
-    Omit<RequestOptions, 'cancellationToken'>
-> & { cancellationToken?: CancellationToken } = {
-    timeout: 30000, // 30 seconds
-    retries: 0,
-    cancellationToken: undefined,
+const DEFAULT_REQUEST_OPTIONS: Required<RequestOptions> = {
+    timeout: 1000,
+    retries: 1,
+    retryCoefficient: 2,
+    firstTimeout: 1000,
+    abortSignal: undefined as any,
 };
 
-/**
- * Manages LSP requests with advanced timeout, cancellation, and monitoring
- */
-export class RequestManager implements Disposable {
-    private connection?: Connection;
-    private disposed = false;
+export class RequestManager {
     private requestCounter = 0;
-
-    // Request tracking
     private readonly pendingRequests = new Map<string, PendingRequest>();
-    private readonly subscriptions = new CompositeSubscription();
-
-    // Statistics and monitoring
     private readonly stats: RequestStats = {
         totalRequests: 0,
         successfulRequests: 0,
         failedRequests: 0,
-        timeoutRequests: 0,
         cancelledRequests: 0,
-        averageResponseTime: 0,
-        requestsByMethod: {},
     };
 
-    private readonly responseTimeHistory: number[] = [];
-    private readonly maxHistorySize = 100;
-
-    // Event handlers
-    private readonly metricsHandlers = new Set<
-        (metrics: RequestMetrics) => void
-    >();
-    private readonly statsHandlers = new Set<(stats: RequestStats) => void>();
-
-    constructor() {
-        this.setupCleanupInterval();
-    }
+    constructor(private readonly connection: Connection) {}
 
     /**
-     * Set the Microsoft Connection instance
-     */
-    setConnection(connection: Connection): void {
-        this.connection = connection;
-    }
-
-    /**
-     * Send a typed LSP request
-     * Accepts both standard LSP methods (from LSPMethods enum) and custom methods
+     * Send LSP request with simplified options
      */
     async sendRequest<P, R>(
         method: LSPMethodValue,
         params: P,
         options: RequestOptions = {},
     ): Promise<LSPResult<R>> {
-        if (!this.connection) {
-            return LSPResult.error(new Error('No active connection'));
-        }
-
-        if (this.disposed) {
-            return LSPResult.error(
-                new Error('RequestManager has been disposed'),
-            );
-        }
-
-        const requestOptions = {
-            ...DEFAULT_REQUEST_OPTIONS,
-            ...options,
-        } as Required<RequestOptions>;
+        const requestOptions = { ...DEFAULT_REQUEST_OPTIONS, ...options };
         const requestId = this.generateRequestId();
 
-        // Create pending request tracking
-        const pendingRequest = this.createPendingRequest(
-            requestId,
+        // Create pending request
+        const abortController = new AbortController();
+        if (requestOptions.abortSignal) {
+            if (requestOptions.abortSignal.aborted) {
+                abortController.abort(requestOptions.abortSignal.reason);
+            } else {
+                requestOptions.abortSignal.addEventListener('abort', () => {
+                    abortController.abort(requestOptions.abortSignal!.reason);
+                });
+            }
+        }
+
+        const pendingRequest: PendingRequest = {
+            id: requestId,
             method,
-            requestOptions,
-        );
+            abortController,
+            retryCount: 0,
+        };
 
         this.pendingRequests.set(requestId, pendingRequest);
-        this.updateStats('start', method);
+        this.stats.totalRequests++;
 
         try {
-            // Send the request using Microsoft's Connection
-            const startTime = Date.now();
             const result = await this.executeRequest(
                 method,
                 params,
                 pendingRequest,
+                requestOptions,
             );
-
-            const duration = Date.now() - startTime;
-            this.recordSuccess(
-                requestId,
-                method,
-                duration,
-                pendingRequest.retryCount,
-            );
-
+            this.stats.successfulRequests++;
             return LSPResult.success(result as R);
         } catch (error) {
-            const duration = Date.now() - pendingRequest.startTime;
-            return this.handleRequestError(
-                error,
-                requestId,
-                method,
-                duration,
-                pendingRequest,
-            );
+            if (abortController.signal.aborted) {
+                this.stats.cancelledRequests++;
+                return LSPResult.cancelled('Request was cancelled');
+            } else {
+                this.stats.failedRequests++;
+                return LSPResult.error(normalizeError(error, method));
+            }
         } finally {
-            this.cleanupRequest(requestId);
+            this.pendingRequests.delete(requestId);
         }
     }
 
     /**
-     * Cancel a specific request
+     * Cancel request by ID
      */
     cancelRequest(requestId: string, reason?: string): boolean {
         const pendingRequest = this.pendingRequests.get(requestId);
@@ -201,140 +107,100 @@ export class RequestManager implements Disposable {
             return false;
         }
 
-        pendingRequest.cancellationSource.cancel();
-        this.recordCancellation(requestId, pendingRequest.method, reason);
-        this.cleanupRequest(requestId);
-
+        pendingRequest.abortController.abort(reason);
+        this.pendingRequests.delete(requestId);
+        this.stats.cancelledRequests++;
         return true;
     }
 
     /**
-     * Cancel all pending requests
-     */
-    cancelAllRequests(reason?: string): void {
-        for (const [requestId, pendingRequest] of this.pendingRequests) {
-            pendingRequest.cancellationSource.cancel();
-            this.recordCancellation(requestId, pendingRequest.method, reason);
-        }
-        this.pendingRequests.clear();
-    }
-
-    /**
-     * Get current request statistics
+     * Get current statistics
      */
     getStats(): RequestStats {
         return { ...this.stats };
     }
 
     /**
-     * Get list of pending requests
+     * Get pending request IDs
      */
-    getPendingRequests(): Array<{
-        id: string;
-        method: string;
-        duration: number;
-    }> {
-        const now = Date.now();
-        return Array.from(this.pendingRequests.values()).map((req) => ({
-            id: req.id,
-            method: req.method,
-            duration: now - req.startTime,
-        }));
+    getPendingRequestIds(): string[] {
+        return Array.from(this.pendingRequests.keys());
     }
 
     /**
-     * Subscribe to request metrics
-     */
-    onMetrics(handler: (metrics: RequestMetrics) => void): Subscription {
-        this.metricsHandlers.add(handler);
-        return createSubscription(
-            () => this.metricsHandlers.delete(handler),
-            'request-metrics-handler',
-        );
-    }
-
-    /**
-     * Subscribe to statistics updates
-     */
-    onStats(handler: (stats: RequestStats) => void): Subscription {
-        this.statsHandlers.add(handler);
-        return createSubscription(
-            () => this.statsHandlers.delete(handler),
-            'request-stats-handler',
-        );
-    }
-
-    /**
-     * Microsoft Disposable interface
-     */
-    dispose(): void {
-        if (this.disposed) {
-            return;
-        }
-
-        this.disposed = true;
-
-        // Cancel all pending requests
-        this.cancelAllRequests('RequestManager disposed');
-
-        // Dispose subscriptions
-        this.subscriptions.dispose();
-
-        // Clear handlers
-        this.metricsHandlers.clear();
-        this.statsHandlers.clear();
-    }
-
-    // === Private Methods ===
-
-    /**
-     * Execute the actual request with retry logic
+     * Execute request with retry logic
      */
     private async executeRequest<P, R>(
         method: LSPMethodValue | string,
         params: P,
         pendingRequest: PendingRequest,
+        options: Required<RequestOptions>,
     ): Promise<R> {
         let lastError: Error | undefined;
 
-        for (let attempt = 0; attempt <= pendingRequest.maxRetries; attempt++) {
+        for (let attempt = 0; attempt <= options.retries; attempt++) {
             try {
                 pendingRequest.retryCount = attempt;
 
-                // Check if request was cancelled
-                if (
-                    pendingRequest.cancellationSource.token
-                        .isCancellationRequested
-                ) {
-                    throw new Error('Request was cancelled');
+                if (pendingRequest.abortController.signal.aborted) {
+                    throw new Error('Request was aborted');
                 }
 
-                // Send request using Microsoft Connection
-                const result = await this.connection!.sendRequest(
-                    method,
-                    params,
-                    pendingRequest.cancellationSource.token,
-                );
+                // Setup timeout for this attempt
+                const timeoutController = new AbortController();
+                const timeout = setTimeout(() => {
+                    timeoutController.abort('Request timeout');
+                }, options.timeout);
 
-                return result as R;
+                // Combine abort signals
+                const combinedController = new AbortController();
+                const cleanup = () => {
+                    clearTimeout(timeout);
+                    combinedController.abort();
+                };
+
+                pendingRequest.abortController.signal.addEventListener(
+                    'abort',
+                    cleanup,
+                );
+                timeoutController.signal.addEventListener('abort', cleanup);
+
+                try {
+                    const result = await this.connection.sendRequest(
+                        method,
+                        params,
+                        this.createCancellationToken(combinedController.signal),
+                    );
+                    clearTimeout(timeout);
+                    return result as R;
+                } finally {
+                    pendingRequest.abortController.signal.removeEventListener(
+                        'abort',
+                        cleanup,
+                    );
+                    timeoutController.signal.removeEventListener(
+                        'abort',
+                        cleanup,
+                    );
+                    clearTimeout(timeout);
+                }
             } catch (error) {
                 lastError =
                     error instanceof Error ? error : new Error(String(error));
 
-                // Don't retry on cancellation or certain error types
-                if (
-                    this.shouldNotRetry(
-                        error,
-                        attempt,
-                        pendingRequest.maxRetries,
-                    )
-                ) {
+                if (pendingRequest.abortController.signal.aborted) {
                     throw lastError;
                 }
 
-                // Wait before retry (exponential backoff)
-                if (attempt < pendingRequest.maxRetries) {
-                    const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+                if (shouldNotRetryError(error) || attempt >= options.retries) {
+                    throw lastError;
+                }
+
+                // Wait before retry with exponential backoff
+                if (attempt < options.retries) {
+                    const delay =
+                        options.firstTimeout *
+                        Math.pow(options.retryCoefficient, attempt);
                     await this.sleep(delay);
                 }
             }
@@ -344,319 +210,30 @@ export class RequestManager implements Disposable {
     }
 
     /**
-     * Create pending request tracking object
+     * Convert AbortSignal to CancellationToken
      */
-    private createPendingRequest(
-        id: string,
-        method: string,
-        options: Required<RequestOptions>,
-    ): PendingRequest {
-        const cancellationSource = new CancellationTokenSource();
-        let userTokenDisposable: Disposable | undefined;
-
-        // Link user cancellation token if provided
-        if (options.cancellationToken) {
-            if (options.cancellationToken.isCancellationRequested) {
-                cancellationSource.cancel();
-            } else {
-                // Simple one-way link: user token cancels our token
-                userTokenDisposable =
-                    options.cancellationToken.onCancellationRequested(() => {
-                        cancellationSource.cancel();
-                    });
-            }
-        }
-
-        // Setup timeout
-        const timeoutHandle = setTimeout(() => {
-            // Only process timeout if request is still pending
-            if (this.pendingRequests.has(id)) {
-                const pendingRequest = this.pendingRequests.get(id)!;
-                pendingRequest.timedOut = true;
-                cancellationSource.cancel();
-                this.recordTimeout(id, method);
-            }
-        }, options.timeout) as any;
-
+    private createCancellationToken(signal: AbortSignal): any {
         return {
-            id,
-            method,
-            startTime: Date.now(),
-            timeout: options.timeout,
-            cancellationSource,
-            timeoutHandle,
-            retryCount: 0,
-            maxRetries: options.retries,
-            timedOut: false,
-            userTokenDisposable,
-        };
-    }
-
-    /**
-     * Handle request errors with appropriate LSPResult conversion
-     */
-    private handleRequestError(
-        error: unknown,
-        requestId: string,
-        method: string,
-        duration: number,
-        pendingRequest: PendingRequest,
-    ): LSPResult<never> {
-        // Normalize error to Error type
-        const normalizedError = normalizeError(error, method);
-
-        this.recordFailure(
-            requestId,
-            method,
-            duration,
-            normalizedError.message,
-            pendingRequest.retryCount,
-        );
-
-        // Check for cancellation errors (from LSP or JavaScript)
-        if (isCancellationError(normalizedError)) {
-            return LSPResult.cancelled(normalizedError.message);
-        }
-
-        // Check for timeout
-        if (pendingRequest.cancellationSource.token.isCancellationRequested) {
-            if (pendingRequest.timedOut) {
-                return LSPResult.timeout(
-                    `Request timed out after ${pendingRequest.timeout}ms`,
-                );
-            } else {
-                return LSPResult.cancelled('Request was cancelled');
-            }
-        }
-
-        return LSPResult.error(normalizedError);
-    }
-
-    /**
-     * Check if error should prevent retries
-     */
-    private shouldNotRetry(
-        error: unknown,
-        attempt: number,
-        maxRetries: number,
-    ): boolean {
-        if (attempt >= maxRetries) {
-            return true;
-        }
-
-        // Use unified error checking
-        return shouldNotRetryError(error);
-    }
-
-    /**
-     * Generate unique request ID
-     */
-    private generateRequestId(): string {
-        return `req_${++this.requestCounter}_${Date.now()}`;
-    }
-
-    /**
-     * Clean up request tracking
-     */
-    private cleanupRequest(requestId: string): void {
-        const pendingRequest = this.pendingRequests.get(requestId);
-        if (pendingRequest) {
-            clearTimeout(pendingRequest.timeoutHandle);
-            pendingRequest.cancellationSource.dispose();
-            this.pendingRequests.delete(requestId);
-        }
-    }
-
-    /**
-     * Record request outcome with unified metrics handling
-     */
-    private recordRequestOutcome(
-        type: 'success' | 'failure' | 'timeout' | 'cancelled',
-        requestId: string,
-        method: string,
-        duration?: number,
-        error?: string,
-        retryCount?: number,
-        reason?: string,
-    ): void {
-        const pendingRequest = this.pendingRequests.get(requestId);
-        const now = Date.now();
-
-        // Calculate duration and retry count with fallbacks
-        const actualDuration =
-            duration ?? (pendingRequest ? now - pendingRequest.startTime : 0);
-        const actualRetryCount =
-            retryCount ?? (pendingRequest?.retryCount || 0);
-
-        // Update stats
-        switch (type) {
-            case 'success':
-                this.stats.successfulRequests++;
-                this.updateResponseTime(actualDuration);
-                break;
-            case 'failure':
-                this.stats.failedRequests++;
-                this.updateResponseTime(actualDuration);
-                break;
-            case 'timeout':
-                this.stats.timeoutRequests++;
-                break;
-            case 'cancelled':
-                this.stats.cancelledRequests++;
-                break;
-        }
-
-        // Emit metrics
-        this.emitMetrics({
-            method,
-            duration: actualDuration,
-            success: type === 'success',
-            error:
-                error ||
-                (type === 'timeout'
-                    ? 'timeout'
-                    : type === 'cancelled'
-                      ? `cancelled: ${reason || 'unknown reason'}`
-                      : undefined),
-            retryCount: actualRetryCount,
-            timestamp: now,
-        });
-    }
-
-    /**
-     * Record successful request
-     */
-    private recordSuccess(
-        requestId: string,
-        method: string,
-        duration: number,
-        retryCount: number,
-    ): void {
-        this.recordRequestOutcome(
-            'success',
-            requestId,
-            method,
-            duration,
-            undefined,
-            retryCount,
-        );
-    }
-
-    /**
-     * Record failed request
-     */
-    private recordFailure(
-        requestId: string,
-        method: string,
-        duration: number,
-        error: string,
-        retryCount: number,
-    ): void {
-        this.recordRequestOutcome(
-            'failure',
-            requestId,
-            method,
-            duration,
-            error,
-            retryCount,
-        );
-    }
-
-    /**
-     * Record timeout
-     */
-    private recordTimeout(requestId: string, method: string): void {
-        this.recordRequestOutcome('timeout', requestId, method);
-    }
-
-    /**
-     * Record cancellation
-     */
-    private recordCancellation(
-        requestId: string,
-        method: string,
-        reason?: string,
-    ): void {
-        this.recordRequestOutcome(
-            'cancelled',
-            requestId,
-            method,
-            undefined,
-            undefined,
-            undefined,
-            reason,
-        );
-    }
-
-    /**
-     * Update statistics
-     */
-    private updateStats(event: 'start', method: string): void {
-        this.stats.totalRequests++;
-        this.stats.requestsByMethod[method] =
-            (this.stats.requestsByMethod[method] || 0) + 1;
-    }
-
-    /**
-     * Update response time statistics
-     */
-    private updateResponseTime(duration: number): void {
-        this.responseTimeHistory.push(duration);
-        if (this.responseTimeHistory.length > this.maxHistorySize) {
-            this.responseTimeHistory.shift();
-        }
-
-        this.stats.averageResponseTime =
-            this.responseTimeHistory.reduce((sum, time) => sum + time, 0) /
-            this.responseTimeHistory.length;
-    }
-
-    /**
-     * Emit metrics to handlers
-     */
-    private emitMetrics(metrics: RequestMetrics): void {
-        for (const handler of this.metricsHandlers) {
-            try {
-                handler(metrics);
-            } catch (error) {
-                console.error('Error in metrics handler:', error);
-            }
-        }
-    }
-
-    /**
-     * Setup cleanup interval for stale requests
-     */
-    private setupCleanupInterval(): void {
-        const cleanup = () => {
-            const now = Date.now();
-            const staleRequests: string[] = [];
-
-            for (const [id, request] of this.pendingRequests) {
-                // Clean up requests that have been pending for more than 2x their timeout
-                if (now - request.startTime > request.timeout * 2) {
-                    staleRequests.push(id);
+            isCancellationRequested: signal.aborted,
+            onCancellationRequested: (callback: () => void) => {
+                if (signal.aborted) {
+                    callback();
+                    return { dispose: () => {} };
                 }
-            }
 
-            for (const id of staleRequests) {
-                this.cancelRequest(id, 'stale request cleanup');
-            }
+                signal.addEventListener('abort', callback);
+                return {
+                    dispose: () =>
+                        signal.removeEventListener('abort', callback),
+                };
+            },
         };
-
-        const intervalId = setInterval(cleanup, 60000) as any; // Every minute
-
-        this.subscriptions.add(
-            createSubscription(
-                () => clearInterval(intervalId),
-                'cleanup-interval',
-            ),
-        );
     }
 
-    /**
-     * Sleep utility for retry delays
-     */
+    private generateRequestId(): string {
+        return `req_${++this.requestCounter}`;
+    }
+
     private sleep(ms: number): Promise<void> {
         return new Promise((resolve) => setTimeout(resolve, ms));
     }

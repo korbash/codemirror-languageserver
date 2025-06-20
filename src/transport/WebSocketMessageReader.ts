@@ -273,7 +273,7 @@ export class WebSocketMessageReader implements MessageReader {
         const content = data.substring(headerEndIndex + 4);
 
         // Parse Content-Length header
-        const contentLengthMatch = headers.handleResult(/Content-Length:\s*(\d+)/i);
+        const contentLengthMatch = headers.match(/Content-Length:\s*(\d+)/i);
         if (!contentLengthMatch) {
             throw new Error(
                 'Invalid LSP message: missing Content-Length header',

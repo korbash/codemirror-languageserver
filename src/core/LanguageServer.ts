@@ -79,7 +79,7 @@ import {
 export class LanguageServer implements Disposable {
     // Core components
     private readonly connectionManager: ConnectionManager;
-    private readonly requestManager: RequestManager;
+    private requestManager?: RequestManager;
     private readonly subscriptionManager: SubscriptionManager;
     private readonly subscriptions: Disposable[] = [];
 
@@ -120,7 +120,6 @@ export class LanguageServer implements Disposable {
         };
 
         this.connectionManager = new ConnectionManager(connectionOptions);
-        this.requestManager = new RequestManager();
         this.subscriptionManager = new SubscriptionManager();
 
         this.setupConnectionManagerHandlers();
@@ -148,7 +147,7 @@ export class LanguageServer implements Disposable {
 
             // Setup managers with the connection
             if (this.connection) {
-                this.requestManager.setConnection(this.connection);
+                this.requestManager = new RequestManager(this.connection);
                 this.subscriptionManager.setConnection(this.connection);
             } else {
                 throw new Error('Failed to establish connection');
@@ -173,6 +172,12 @@ export class LanguageServer implements Disposable {
                 ),
                 ...params,
             };
+
+            if (!this.requestManager) {
+                return LSPResult.error(
+                    new Error('RequestManager not initialized'),
+                );
+            }
 
             const result = await this.requestManager.sendRequest(
                 LSPMethods.INITIALIZE,
@@ -237,6 +242,9 @@ export class LanguageServer implements Disposable {
         params: CompletionParams,
         options?: RequestOptions,
     ): Promise<LSPResult<CompletionList | CompletionItem[] | null>> {
+        if (!this.requestManager) {
+            return LSPResult.error(new Error('Server not initialized'));
+        }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_COMPLETION,
             params,
@@ -251,6 +259,9 @@ export class LanguageServer implements Disposable {
         params: HoverParams,
         options?: RequestOptions,
     ): Promise<LSPResult<Hover | null>> {
+        if (!this.requestManager) {
+            return LSPResult.error(new Error('Server not initialized'));
+        }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_HOVER,
             params,
@@ -271,6 +282,9 @@ export class LanguageServer implements Disposable {
             | null
         >
     > {
+        if (!this.requestManager) {
+            return LSPResult.error(new Error('Server not initialized'));
+        }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_DEFINITION,
             params,
@@ -285,6 +299,9 @@ export class LanguageServer implements Disposable {
         params: ReferenceParams,
         options?: RequestOptions,
     ): Promise<LSPResult<Location[] | null>> {
+        if (!this.requestManager) {
+            return LSPResult.error(new Error('Server not initialized'));
+        }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_REFERENCES,
             params,
@@ -299,6 +316,9 @@ export class LanguageServer implements Disposable {
         params: DocumentSymbolParams,
         options?: RequestOptions,
     ): Promise<LSPResult<DocumentSymbol[] | SymbolInformation[] | null>> {
+        if (!this.requestManager) {
+            return LSPResult.error(new Error('Server not initialized'));
+        }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_DOCUMENTSYMBOL,
             params,
@@ -316,6 +336,10 @@ export class LanguageServer implements Disposable {
     ): Promise<LSPResult<ExtractResult<K>>> {
         if (!this.connection) {
             return LSPResult.error(new Error('No active connection'));
+        }
+
+        if (!this.requestManager) {
+            return LSPResult.error(new Error('Server not initialized'));
         }
 
         return this.requestManager.sendRequest(method, params, options);
@@ -535,7 +559,6 @@ export class LanguageServer implements Disposable {
 
         // Dispose managers
         this.subscriptionManager.dispose();
-        this.requestManager.dispose();
         this.connectionManager.dispose();
 
         // Clear event handlers

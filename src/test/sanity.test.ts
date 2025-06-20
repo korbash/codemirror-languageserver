@@ -68,12 +68,12 @@ describe('Sanity Check - New LanguageServer API', () => {
 
         assert.ok(serverResult, 'Should return LSPResult');
         assert.ok(
-            typeof serverResult.match === 'function',
-            'Should have match method',
-        );
-        assert.ok(
             typeof serverResult.isSuccess === 'function',
             'Should have isSuccess method',
+        );
+        assert.ok(
+            typeof serverResult.getValue === 'function',
+            'Should have getValue method',
         );
 
         serverResult.handleResult({
