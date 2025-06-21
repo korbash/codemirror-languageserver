@@ -131,9 +131,9 @@ export function createAndInitializeLanguageServer(
 /**
  * Create a WebSocket-based connection manager
  */
-export async function createConnectionManager(
+export function createConnectionManager(
     options: import('./core/ConnectionManager').ConnectionManagerOptions,
-): Promise<import('./core/ConnectionManager').ConnectionManager> {
+): import('./core/ConnectionManager').ConnectionManager {
     return new ConnectionManager(options);
 }
 

@@ -11,9 +11,12 @@ import {
     MessageWriter,
     Disposable,
     Logger,
+    ErrorCodes,
 } from 'vscode-languageserver-protocol';
 
 import { createConnection, Connection } from 'vscode-languageserver/node.js';
+import { Result, Ok, Err, AsyncResult } from 'ts-results-es';
+import { LSPError } from '../types/ErrorConverter.js';
 
 import {
     WebSocketMessageReader,
@@ -57,19 +60,9 @@ export interface ConnectionManagerOptions {
     writer?: WebSocketMessageWriterOptions;
 
     /**
-     * Enable performance monitoring
-     */
-    enableMonitoring?: boolean;
-
-    /**
      * Custom logger
      */
     logger?: Logger;
-
-    /**
-     * Debug mode
-     */
-    debug?: boolean;
 
     /**
      * Connection timeout in milliseconds
@@ -80,17 +73,6 @@ export interface ConnectionManagerOptions {
      * Reconnection options
      */
     reconnectOptions?: ReconnectOptions;
-}
-
-/**
- * Connection Statistics
- */
-interface ConnectionStats {
-    connectionTime: number;
-    messagesSent: number;
-    messagesReceived: number;
-    errors: number;
-    reconnections: number;
 }
 
 /**
@@ -105,17 +87,7 @@ export class ConnectionManager implements Disposable {
 
     // State management (Zed-style)
     private state: ConnectionState = ConnectionState.Initial;
-    private connectStartTime: number = 0;
     private readonly subscriptions: Disposable[] = [];
-
-    // Performance monitoring (Zed-style)
-    private readonly stats: ConnectionStats = {
-        connectionTime: 0,
-        messagesSent: 0,
-        messagesReceived: 0,
-        errors: 0,
-        reconnections: 0,
-    };
 
     // Reconnection management
     private reconnectAttempts: number = 0;
@@ -126,8 +98,6 @@ export class ConnectionManager implements Disposable {
         (state: ConnectionState) => void
     > = [];
     private readonly errorHandlers: Array<(error: Error) => void> = [];
-    private readonly statsHandlers: Array<(stats: ConnectionStats) => void> =
-        [];
 
     constructor(private options: ConnectionManagerOptions) {
         this.validateOptions();
@@ -136,47 +106,74 @@ export class ConnectionManager implements Disposable {
     /**
      * Create and establish the LSP connection
      */
-    async connect(): Promise<Connection> {
+    connect(): AsyncResult<Connection, LSPError[]> {
         if (this.connection) {
-            throw new Error('Connection already exists');
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        'Connection already exists',
+                        ErrorCodes.InvalidRequest,
+                        'connect',
+                    ),
+                ]),
+            );
         }
 
         if (this.disposed) {
-            throw new Error('ConnectionManager has been disposed');
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        'ConnectionManager has been disposed',
+                        ErrorCodes.InvalidRequest,
+                        'connect',
+                    ),
+                ]),
+            );
         }
 
         this.setState(ConnectionState.Connecting);
-        this.connectStartTime = Date.now();
 
-        try {
-            // Create WebSocket connection
-            await this.createWebSocket();
+        const connectPromise = (async (): Promise<
+            Result<Connection, LSPError[]>
+        > => {
+            try {
+                // Create WebSocket connection
+                await this.createWebSocket();
 
-            // Create message reader/writer
-            this.createMessageReaderWriter();
+                // Create message reader/writer
+                this.createMessageReaderWriter();
 
-            // Create Microsoft's ProtocolConnection
-            this.connection = this.createProtocolConnection();
+                // Create Microsoft's ProtocolConnection
+                this.connection = this.createProtocolConnection();
 
-            // Setup event handlers
-            this.setupConnectionHandlers();
+                // Setup event handlers
+                this.setupConnectionHandlers();
 
-            // Setup monitoring if enabled
-            if (this.options.enableMonitoring) {
-                this.setupMonitoring();
+                this.setState(ConnectionState.Running);
+                this.resetReconnectAttempts();
+
+                this.log('INFO', 'LSP connection established');
+                return Ok(this.connection);
+            } catch (error) {
+                this.setState(ConnectionState.Stopped);
+                this.handleConnectionError(error);
+
+                const lspError =
+                    error instanceof LSPError
+                        ? error
+                        : new LSPError(
+                              error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                              ErrorCodes.InternalError,
+                              'connect',
+                          );
+
+                return Err([lspError]);
             }
+        })();
 
-            this.setState(ConnectionState.Running);
-            this.stats.connectionTime = Date.now() - this.connectStartTime;
-            this.resetReconnectAttempts();
-
-            this.log('INFO', 'LSP connection established');
-            return this.connection;
-        } catch (error) {
-            this.setState(ConnectionState.Stopped);
-            this.handleConnectionError(error);
-            throw error;
-        }
+        return new AsyncResult(connectPromise);
     }
 
     /**
@@ -205,47 +202,58 @@ export class ConnectionManager implements Disposable {
     }
 
     /**
-     * Get connection statistics
-     */
-    getStats(): Readonly<ConnectionStats> {
-        return { ...this.stats };
-    }
-
-    /**
      * Close the connection
      */
-    async close(): Promise<void> {
+    close(): AsyncResult<void, LSPError[]> {
         if (this.disposed) {
-            return;
+            return new AsyncResult(Ok(undefined));
         }
 
         this.setState(ConnectionState.Stopping);
         this.clearReconnectTimer();
 
-        try {
-            // Close connection first
-            if (this.connection) {
-                this.connection.dispose();
-                this.connection = null;
+        const closePromise = (async (): Promise<Result<void, LSPError[]>> => {
+            try {
+                // Close connection first
+                if (this.connection) {
+                    this.connection.dispose();
+                    this.connection = null;
+                }
+
+                // Close WebSocket
+                if (this.webSocket) {
+                    this.webSocket.close();
+                    this.webSocket = null;
+                }
+
+                // Clean up reader/writer
+                this.reader?.dispose();
+                this.writer?.dispose();
+                this.reader = null;
+                this.writer = null;
+
+                this.setState(ConnectionState.Stopped);
+                this.log('INFO', 'LSP connection closed');
+                return Ok(undefined);
+            } catch (error) {
+                this.handleConnectionError(error);
+
+                const lspError =
+                    error instanceof LSPError
+                        ? error
+                        : new LSPError(
+                              error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                              ErrorCodes.InternalError,
+                              'close',
+                          );
+
+                return Err([lspError]);
             }
+        })();
 
-            // Close WebSocket
-            if (this.webSocket) {
-                this.webSocket.close();
-                this.webSocket = null;
-            }
-
-            // Clean up reader/writer
-            this.reader?.dispose();
-            this.writer?.dispose();
-            this.reader = null;
-            this.writer = null;
-
-            this.setState(ConnectionState.Stopped);
-            this.log('INFO', 'LSP connection closed');
-        } catch (error) {
-            this.handleConnectionError(error);
-        }
+        return new AsyncResult(closePromise);
     }
 
     /**
@@ -279,21 +287,6 @@ export class ConnectionManager implements Disposable {
     }
 
     /**
-     * Register stats handler
-     */
-    onStats(handler: (stats: ConnectionStats) => void): Disposable {
-        this.statsHandlers.push(handler);
-        return {
-            dispose: () => {
-                const index = this.statsHandlers.indexOf(handler);
-                if (index >= 0) {
-                    this.statsHandlers.splice(index, 1);
-                }
-            },
-        };
-    }
-
-    /**
      * Dispose the connection manager
      */
     dispose(): void {
@@ -305,8 +298,13 @@ export class ConnectionManager implements Disposable {
         this.clearReconnectTimer();
 
         // Close connection
-        this.close().catch((error) => {
-            this.log('ERROR', `Error during disposal: ${error.message}`);
+        this.close().promise.catch((result) => {
+            if (result.isErr()) {
+                this.log(
+                    'ERROR',
+                    `Error during disposal: ${result.error[0]?.message}`,
+                );
+            }
         });
 
         // Dispose all subscriptions
@@ -322,7 +320,6 @@ export class ConnectionManager implements Disposable {
         // Clear handlers
         this.stateChangeHandlers.length = 0;
         this.errorHandlers.length = 0;
-        this.statsHandlers.length = 0;
     }
 
     /**
@@ -427,32 +424,9 @@ export class ConnectionManager implements Disposable {
     }
 
     /**
-     * Setup performance monitoring
-     */
-    private setupMonitoring(): void {
-        if (!this.connection) {
-            return;
-        }
-
-        // Monitor outgoing messages
-        const originalSendRequest = this.connection.sendRequest.bind(
-            this.connection,
-        );
-        this.connection.sendRequest = (type: any, ...args: any[]) => {
-            this.stats.messagesSent++;
-            this.updateStats();
-            return originalSendRequest(type, ...args);
-        };
-
-        // Note: Direct message monitoring not available on Connection interface
-        // Monitoring will be handled at transport level if needed
-    }
-
-    /**
      * Handle connection errors
      */
     private handleConnectionError(error: any): void {
-        this.stats.errors++;
         this.log('ERROR', `Connection error: ${error.message || error}`);
 
         this.errorHandlers.forEach((handler) => {
@@ -498,7 +472,6 @@ export class ConnectionManager implements Disposable {
         }
 
         this.reconnectAttempts++;
-        this.stats.reconnections++;
 
         const delay = Math.min(
             reconnectOptions.initialDelay *
@@ -516,33 +489,20 @@ export class ConnectionManager implements Disposable {
 
         this.reconnectTimer = setTimeout(async () => {
             try {
-                await this.close();
-                await this.connect();
+                const closeResult = await this.close().promise;
+                if (closeResult.isOk()) {
+                    const connectResult = await this.connect().promise;
+                    if (connectResult.isErr()) {
+                        this.log(
+                            'ERROR',
+                            `Reconnection failed: ${connectResult.error}`,
+                        );
+                    }
+                }
             } catch (error) {
                 this.log('ERROR', `Reconnection failed: ${error}`);
             }
         }, delay);
-    }
-
-    /**
-     * Update and emit stats
-     */
-    private updateStats(): void {
-        this.emitStats();
-    }
-
-    /**
-     * Emit stats to handlers
-     */
-    private emitStats(): void {
-        const stats = this.getStats();
-        this.statsHandlers.forEach((handler) => {
-            try {
-                handler(stats);
-            } catch (error) {
-                this.log('ERROR', `Error in stats handler: ${error}`);
-            }
-        });
     }
 
     /**

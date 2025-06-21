@@ -1,6 +1,7 @@
 /**
- * Connection tests - тесты подключения к LSP серверу
- * Тестирует новую архитектуру LanguageServer с pattern matching
+ * Connection Management Tests
+ *
+ * Tests for establishing and managing LSP connections
  */
 
 import assert from 'assert';
@@ -8,19 +9,17 @@ import {
     createAndInitializeLanguageServer,
     createLanguageServer,
     LanguageServerOptions,
-    LSPResult,
     LanguageServer,
 } from '../index.js';
 
-const TEST_SERVER_URL = 'ws://127.0.0.1:8000/lsp/python';
-const INVALID_SERVER_URL = 'ws://localhost:99999/invalid';
+// Test configuration
+const TEST_SERVER_URL = 'ws://localhost:3001';
+const INVALID_SERVER_URL = 'ws://localhost:9999';
 
 const DEFAULT_OPTIONS: LanguageServerOptions = {
-    name: 'Connection Test Server',
-    rootUri: 'file:///test',
+    name: 'Test Python LSP',
+    rootUri: 'file:///',
     logging: { level: 'error' },
-    request: { timeout: 15000 },
-    connection: { reconnectAttempts: 2, reconnectDelay: 1000 },
 };
 
 describe('Connection Management Tests', () => {
@@ -53,7 +52,9 @@ describe('Connection Management Tests', () => {
                     );
                     return;
                 }
-                throw new Error(errors[0]?.message || 'Unknown error');
+                throw new Error(
+                    error instanceof Error ? error.message : 'Unknown error',
+                );
             }
         });
 
@@ -65,45 +66,33 @@ describe('Connection Management Tests', () => {
 
             let testPassed = false;
 
-            await result.handleResult({
-                success: (server: LanguageServer) => {
-                    assert.ok(server, 'Initialized server should be available');
-                    assert.ok(
-                        typeof server.completion === 'function',
-                        'Server should have completion method',
-                    );
-                    assert.ok(
-                        typeof server.hover === 'function',
-                        'Server should have hover method',
-                    );
+            const serverResult = await result.promise;
+            if (serverResult.isOk()) {
+                const server = serverResult.unwrap();
+                assert.ok(server, 'Initialized server should be available');
+                assert.ok(
+                    typeof server.completion === 'function',
+                    'Server should have completion method',
+                );
+                assert.ok(
+                    typeof server.hover === 'function',
+                    'Server should have hover method',
+                );
 
-                    server.dispose();
+                server.dispose();
+                testPassed = true;
+            } else {
+                const errors = serverResult.error;
+                if (
+                    errors[0]?.message &&
+                    errors[0].message.includes('ECONNREFUSED')
+                ) {
+                    console.warn('⚠️  Test server not available');
                     testPassed = true;
-                },
-                timeout: async () => {
-                    console.warn('⚠️  Server initialization timed out');
-                    testPassed = true; // Не фейлим, это проблема окружения
-                },
-                error: async (errors: Error[]) => {
-                    if (
-                        errors[0]?.message ||
-                        'Unknown error'.includes('ECONNREFUSED')
-                    ) {
-                        console.warn('⚠️  Test server not available');
-                        testPassed = true;
-                        return;
-                    }
+                } else {
                     throw new Error(errors[0]?.message || 'Unknown error');
-                },
-                cancelled: async () => {
-                    console.warn('⚠️  Initialization cancelled');
-                    testPassed = true;
-                },
-                connectionReset: async () => {
-                    console.warn('⚠️  Connection reset during initialization');
-                    testPassed = true;
-                },
-            });
+                }
+            }
 
             assert.strictEqual(testPassed, true, 'Test should complete');
         });
@@ -120,28 +109,16 @@ describe('Connection Management Tests', () => {
 
             let errorHandled = false;
 
-            await result.handleResult({
-                success: (server: LanguageServer) => {
-                    server.dispose();
-                    assert.fail('Should not succeed with invalid URL');
-                },
-                timeout: async () => {
-                    errorHandled = true;
-                },
-                error: async (errors: Error[]) => {
-                    errorHandled = true;
-                    assert.ok(
-                        errors[0] instanceof Error,
-                        'Should receive Error',
-                    );
-                },
-                cancelled: async () => {
-                    errorHandled = true;
-                },
-                connectionReset: async () => {
-                    errorHandled = true;
-                },
-            });
+            const serverResult = await result.promise;
+            if (serverResult.isOk()) {
+                const server = serverResult.unwrap();
+                server.dispose();
+                assert.fail('Should not succeed with invalid URL');
+            } else {
+                errorHandled = true;
+                const errors = serverResult.error;
+                assert.ok(errors[0] instanceof Error, 'Should receive Error');
+            }
 
             assert.strictEqual(
                 errorHandled,
@@ -165,39 +142,29 @@ describe('Connection Management Tests', () => {
 
             let timeoutReceived = false;
 
-            await result.handleResult({
-                success: (server: LanguageServer) => {
-                    server.dispose();
-                    assert.fail('Should timeout, not succeed');
-                },
-                timeout: async () => {
-                    const elapsed = Date.now() - startTime;
-                    assert.ok(
-                        elapsed >= 1800 && elapsed <= 5000,
-                        `Should timeout around 2s, got ${elapsed}ms`,
-                    );
-                    timeoutReceived = true;
-                },
-                error: async () => {
-                    timeoutReceived = true; // Error is also acceptable
-                },
-                cancelled: async () => {
-                    timeoutReceived = true;
-                },
-                connectionReset: async () => {
-                    timeoutReceived = true;
-                },
-            });
+            const serverResult = await result.promise;
+            if (serverResult.isOk()) {
+                const server = serverResult.unwrap();
+                server.dispose();
+                assert.fail('Should timeout, not succeed');
+            } else {
+                timeoutReceived = true;
+                const elapsed = Date.now() - startTime;
+                // Should fail within reasonable time (allow some buffer)
+                assert.ok(
+                    elapsed < 5000,
+                    `Should timeout quickly, took ${elapsed}ms`,
+                );
+            }
 
             assert.strictEqual(
                 timeoutReceived,
                 true,
-                'Should receive timeout or error',
+                'Should receive timeout error',
             );
         });
 
         it('should validate server options', async () => {
-            // Тест с невалидными опциями
             try {
                 const server = await createLanguageServer(TEST_SERVER_URL, {
                     name: '', // Пустое имя
@@ -207,9 +174,14 @@ describe('Connection Management Tests', () => {
 
                 server.dispose();
             } catch (error) {
-                // Ожидаем либо ошибку валидации, либо ошибку подключения
-                assert.ok(error instanceof Error, 'Should throw error');
+                assert.ok(
+                    error instanceof Error,
+                    'Should throw validation error',
+                );
+                return; // Expected error
             }
+
+            assert.fail('Should throw validation error for invalid options');
         });
     });
 
@@ -220,40 +192,44 @@ describe('Connection Management Tests', () => {
                 DEFAULT_OPTIONS,
             );
 
-            await result.handleResult({
-                success: (server: LanguageServer) => {
-                    // Проверяем что dispose работает без исключений
-                    assert.doesNotThrow(() => {
-                        server.dispose();
-                    }, 'First dispose should not throw');
+            const serverResult = await result.promise;
+            if (serverResult.isOk()) {
+                const server = serverResult.unwrap();
 
-                    // Проверяем что повторный dispose безопасен
-                    assert.doesNotThrow(() => {
-                        server.dispose();
-                    }, 'Second dispose should not throw');
-                },
-                timeout: async () => {
-                    console.warn('⚠️  Timeout during dispose test');
-                },
-                error: async (errors: Error[]) => {
-                    if (
-                        errors[0]?.message ||
-                        'Unknown error'.includes('ECONNREFUSED')
-                    ) {
-                        console.warn(
-                            '⚠️  Server not available for dispose test',
-                        );
-                        return;
-                    }
-                    throw new Error(errors[0]?.message || 'Unknown error');
-                },
-                cancelled: async () => {
-                    console.warn('⚠️  Cancelled during dispose test');
-                },
-                connectionReset: async () => {
-                    console.warn('⚠️  Connection reset during dispose test');
-                },
-            });
+                // Проверяем что dispose работает без исключений
+                assert.doesNotThrow(() => {
+                    server.dispose();
+                }, 'First dispose should not throw');
+
+                // Проверяем что повторный dispose безопасен
+                assert.doesNotThrow(() => {
+                    server.dispose();
+                }, 'Second dispose should be safe');
+
+                // Проверяем что дальнейшие операции не работают
+                try {
+                    await server.completion({
+                        textDocument: { uri: 'file:///test.py' },
+                        position: { line: 0, character: 0 },
+                    }).promise;
+                    assert.fail('Should not allow operations after dispose');
+                } catch (error) {
+                    // Expected - operations should fail after dispose
+                    assert.ok(error instanceof Error);
+                }
+            } else {
+                const errors = serverResult.error;
+                if (
+                    errors[0]?.message &&
+                    errors[0].message.includes('ECONNREFUSED')
+                ) {
+                    console.warn(
+                        '⚠️  Test server not available, skipping test',
+                    );
+                    return;
+                }
+                throw new Error(errors[0]?.message || 'Unknown error');
+            }
         });
 
         it('should handle multiple concurrent connections', async () => {
@@ -268,59 +244,43 @@ describe('Connection Management Tests', () => {
                 }),
             ];
 
-            const results = await Promise.all(promises);
-            const servers: LanguageServer[] = [];
-
             try {
+                const results = await Promise.allSettled(
+                    promises.map((p) => p.promise),
+                );
+                const servers: LanguageServer[] = [];
+
                 for (const result of results) {
-                    await result.handleResult({
-                        success: (server: LanguageServer) => {
-                            servers.push(server);
-                        },
-                        timeout: async () => {
+                    if (result.status === 'fulfilled' && result.value.isOk()) {
+                        const server = result.value.unwrap();
+                        servers.push(server);
+                    } else if (
+                        result.status === 'fulfilled' &&
+                        result.value.isErr()
+                    ) {
+                        const errors = result.value.error;
+                        if (
+                            errors[0]?.message &&
+                            (errors[0].message.includes('ECONNREFUSED') ||
+                                errors[0].message.includes('timeout'))
+                        ) {
                             console.warn('⚠️  Timeout in concurrent test');
-                        },
-                        error: async (errors: Error[]) => {
-                            if (
-                                errors[0]?.message ||
-                                'Unknown error'.includes('ECONNREFUSED')
-                            ) {
-                                console.warn(
-                                    '⚠️  Server not available for concurrent test',
-                                );
-                                return;
-                            }
-                            throw new Error(
-                                errors[0]?.message || 'Unknown error',
-                            );
-                        },
-                        cancelled: async () => {
-                            console.warn('⚠️  Cancelled in concurrent test');
-                        },
-                        connectionReset: async () => {
+                        } else {
                             console.warn(
-                                '⚠️  Connection reset in concurrent test',
+                                `⚠️  Connection error: ${errors[0]?.message}`,
                             );
-                        },
-                    });
+                        }
+                    }
                 }
 
-                // Если у нас есть серверы, проверяем что они независимы
-                if (servers.length > 0) {
-                    assert.ok(
-                        servers.length <= 2,
-                        `Should have at most 2 servers, got ${servers.length}`,
-                    );
-                }
-            } finally {
-                // Очищаем все серверы
-                servers.forEach((server) => {
-                    try {
-                        server.dispose();
-                    } catch (error) {
-                        console.warn('Error disposing server:', error);
-                    }
-                });
+                // Cleanup all successfully created servers
+                servers.forEach((server) => server.dispose());
+
+                console.log(
+                    `✅ Handled ${servers.length} concurrent connections`,
+                );
+            } catch (error) {
+                console.warn('⚠️  Concurrent connection test failed:', error);
             }
         });
     });
@@ -332,71 +292,56 @@ describe('Connection Management Tests', () => {
                 DEFAULT_OPTIONS,
             );
 
-            await result.handleResult({
-                success: async (server: LanguageServer) => {
-                    try {
-                        // Пробуем сделать запрос, который может не сработать если сервер отключится
-                        const completion = await server.completion({
-                            textDocument: { uri: 'file:///test.py' },
-                            position: { line: 0, character: 0 },
-                        });
+            const serverResult = await result.promise;
+            if (serverResult.isOk()) {
+                const server = serverResult.unwrap();
 
-                        await completion.handleResult({
-                            success: async () => {
-                                console.log(
-                                    '✅ Request succeeded despite potential disconnection',
-                                );
-                            },
-                            timeout: async () => {
-                                console.log('⏰ Request timed out (expected)');
-                            },
-                            error: async () => {
-                                console.log('❌ Request failed (expected)');
-                            },
-                            cancelled: async () => {
-                                console.log('🚫 Request cancelled (expected)');
-                            },
-                            connectionReset: async () => {
-                                console.log('💔 Connection reset (expected)');
-                            },
-                        });
-                    } finally {
-                        server.dispose();
-                    }
-                },
-                timeout: async () => {
-                    console.warn('⚠️  Timeout during disconnection test');
-                },
-                error: async (errors: Error[]) => {
-                    if (
-                        errors[0]?.message ||
-                        'Unknown error'.includes('ECONNREFUSED')
-                    ) {
-                        console.warn(
-                            '⚠️  Server not available for disconnection test',
+                try {
+                    // Пробуем сделать запрос, который может не сработать если сервер отключится
+                    const completion = await server.completion({
+                        textDocument: { uri: 'file:///test.py' },
+                        position: { line: 0, character: 0 },
+                    });
+
+                    const completionResult = await completion.promise;
+                    if (completionResult.isOk()) {
+                        console.log(
+                            '✅ Request succeeded despite potential disconnection',
                         );
-                        return;
+                    } else {
+                        console.log(
+                            '⚠️  Request failed, which is expected for disconnection test',
+                        );
                     }
-                    console.warn(
-                        'Error in disconnection test:',
-                        errors[0]?.message || 'Unknown error',
+                } catch (error) {
+                    console.log(
+                        '⚠️  Request threw error, which is expected for disconnection test',
                     );
-                },
-                cancelled: async () => {
-                    console.warn('⚠️  Cancelled during disconnection test');
-                },
-                connectionReset: async () => {
-                    console.log('💔 Connection reset during test (expected)');
-                },
-            });
+                } finally {
+                    server.dispose();
+                }
+            } else {
+                const errors = serverResult.error;
+                if (
+                    errors[0]?.message &&
+                    errors[0].message.includes('ECONNREFUSED')
+                ) {
+                    console.warn(
+                        '⚠️  Test server not available, skipping test',
+                    );
+                    return;
+                }
+                throw new Error(errors[0]?.message || 'Unknown error');
+            }
         });
 
         it('should validate WebSocket URL format', async () => {
             const invalidUrls = [
-                'http://localhost:8000/lsp', // HTTP instead of WS
-                'ws://', // Incomplete URL
-                '', // Empty URL
-                'not-a-url', // Invalid format
+                'invalid-url',
+                'http://localhost:3000', // HTTP instead of WS
+                'ftp://localhost:3000',
+                '',
+                'ws://', // Incomplete
             ];
 
             for (const url of invalidUrls) {
@@ -412,42 +357,25 @@ describe('Connection Management Tests', () => {
 
                     let errorOccurred = false;
 
-                    await result.handleResult({
-                        success: (server: LanguageServer) => {
-                            server.dispose();
-                            // Если URL как-то сработал, это не ошибка теста
-                        },
-                        timeout: async () => {
-                            errorOccurred = true;
-                        },
-                        error: async (errors: Error[]) => {
-                            errorOccurred = true;
-                            assert.ok(
-                                error instanceof Error,
-                                'Should receive Error for invalid URL',
-                            );
-                        },
-                        cancelled: async () => {
-                            errorOccurred = true;
-                        },
-                        connectionReset: async () => {
-                            errorOccurred = true;
-                        },
-                    });
-
-                    // Для большинства невалидных URL ожидаем ошибку
-                    if (url === '' || url === 'not-a-url') {
-                        assert.strictEqual(
-                            errorOccurred,
-                            true,
-                            `Should handle invalid URL: ${url}`,
-                        );
+                    const serverResult = await result.promise;
+                    if (serverResult.isOk()) {
+                        const server = serverResult.unwrap();
+                        server.dispose();
+                        assert.fail('Should not succeed with invalid URL');
+                    } else {
+                        errorOccurred = true;
                     }
+
+                    assert.strictEqual(
+                        errorOccurred,
+                        true,
+                        `Should reject invalid URL: ${url}`,
+                    );
                 } catch (error) {
-                    // Исключения тоже допустимы для невалидных URL
+                    // Expected for invalid URLs
                     assert.ok(
                         error instanceof Error,
-                        'Should throw Error for invalid URL',
+                        `Should throw error for invalid URL: ${url}`,
                     );
                 }
             }

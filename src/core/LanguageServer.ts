@@ -107,11 +107,7 @@ export class LanguageServer implements Disposable {
         // Create connection manager with our options
         const connectionOptions: ConnectionManagerOptions = {
             wsUrl: serverUri,
-            debug:
-                this.options.logging?.level === 'debug' ||
-                this.options.logging?.level === 'trace',
             connectionTimeout: 10000,
-            enableMonitoring: true,
             reconnectOptions: {
                 enabled: true,
                 maxAttempts: this.options.connection?.reconnectAttempts ?? 3,
@@ -152,19 +148,24 @@ export class LanguageServer implements Disposable {
                 this.setState(ServerState.Connecting);
 
                 // Create Microsoft Connection
-                this.connection = await this.connectionManager.connect();
-
-                // Setup managers with the connection
-                if (this.connection) {
-                    this.requestManager = new RequestManager(this.connection);
-                    this.subscriptionManager.setConnection(this.connection);
-                } else {
-                    throw new LSPError(
-                        'Failed to establish connection',
-                        ErrorCodes.InternalError,
-                        'initialize',
+                const connectionResult =
+                    await this.connectionManager.connect().promise;
+                if (connectionResult.isErr()) {
+                    throw (
+                        connectionResult.error[0] ||
+                        new LSPError(
+                            'Failed to establish connection',
+                            ErrorCodes.InternalError,
+                            'initialize',
+                        )
                     );
                 }
+
+                this.connection = connectionResult.unwrap();
+
+                // Setup managers with the connection
+                this.requestManager = new RequestManager(this.connection);
+                this.subscriptionManager.setConnection(this.connection);
 
                 // Setup built-in handlers
                 this.setupBuiltinNotificationHandlers();
@@ -240,27 +241,10 @@ export class LanguageServer implements Disposable {
 
         this.setState(ServerState.Stopping);
 
-        return new AsyncResult(
-            this.connectionManager
-                .close()
-                .then(() => {
-                    this.setState(ServerState.Stopped);
-                    return Ok(undefined);
-                })
-                .catch((error) => {
-                    const lspError =
-                        error instanceof LSPError
-                            ? error
-                            : new LSPError(
-                                  error instanceof Error
-                                      ? error.message
-                                      : String(error),
-                                  ErrorCodes.InternalError,
-                                  'shutdown',
-                              );
-                    return Err([lspError]);
-                }),
-        );
+        return this.connectionManager.close().map(() => {
+            this.setState(ServerState.Stopped);
+            return undefined;
+        });
     }
 
     // === Typed LSP Request Methods ===
