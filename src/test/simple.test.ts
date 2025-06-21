@@ -20,7 +20,9 @@ class SimpleWebSocketTransport {
             try {
                 // В Node.js окружении WebSocket может быть недоступен
                 if (typeof WebSocket === 'undefined') {
-                    console.log('⚠️  WebSocket not available in Node.js environment');
+                    console.log(
+                        '⚠️  WebSocket not available in Node.js environment',
+                    );
                     reject(new Error('WebSocket not available'));
                     return;
                 }
@@ -34,7 +36,11 @@ class SimpleWebSocketTransport {
 
                 this.websocket.onerror = () => {
                     this.connected = false;
-                    reject(new Error(`ECONNREFUSED: Connection refused to ${this.url}`));
+                    reject(
+                        new Error(
+                            `ECONNREFUSED: Connection refused to ${this.url}`,
+                        ),
+                    );
                 };
 
                 this.websocket.onclose = () => {
@@ -47,7 +53,6 @@ class SimpleWebSocketTransport {
                         reject(new Error(`Connection timeout to ${this.url}`));
                     }
                 }, 5000);
-
             } catch (error) {
                 reject(error);
             }
@@ -73,7 +78,11 @@ describe('Simple Transport Test', () => {
     it('should create transport instance', () => {
         const transport = new SimpleWebSocketTransport(TEST_SERVER_URL);
         assert.ok(transport, 'Transport should be created');
-        assert.strictEqual(transport.isConnected, false, 'Should start disconnected');
+        assert.strictEqual(
+            transport.isConnected,
+            false,
+            'Should start disconnected',
+        );
     });
 
     it('should handle connection attempt', async () => {
@@ -81,14 +90,22 @@ describe('Simple Transport Test', () => {
 
         try {
             await transport.connect();
-            assert.strictEqual(transport.isConnected, true, 'Should be connected');
+            assert.strictEqual(
+                transport.isConnected,
+                true,
+                'Should be connected',
+            );
             console.log('✅ Successfully connected to LSP server');
         } catch (error) {
-            if (error instanceof Error && (
-                error.message.includes('ECONNREFUSED') ||
-                error.message.includes('WebSocket not available')
-            )) {
-                console.warn('⚠️  Expected error - LSP server not available or WebSocket unavailable:', error.message);
+            if (
+                error instanceof Error &&
+                (error.message.includes('ECONNREFUSED') ||
+                    error.message.includes('WebSocket not available'))
+            ) {
+                console.warn(
+                    '⚠️  Expected error - LSP server not available or WebSocket unavailable:',
+                    error.message,
+                );
                 // Это не ошибка теста, а проблема окружения
             } else {
                 throw error;
@@ -99,7 +116,9 @@ describe('Simple Transport Test', () => {
     });
 
     it('should handle invalid URL gracefully', async () => {
-        const transport = new SimpleWebSocketTransport('ws://localhost:99999/invalid');
+        const transport = new SimpleWebSocketTransport(
+            'ws://localhost:99999/invalid',
+        );
 
         try {
             await transport.connect();
@@ -122,15 +141,27 @@ describe('Simple Transport Test', () => {
             transport.close();
         }, 'Multiple close calls should be safe');
 
-        assert.strictEqual(transport.isConnected, false, 'Should remain disconnected');
+        assert.strictEqual(
+            transport.isConnected,
+            false,
+            'Should remain disconnected',
+        );
     });
 
     it('should report correct connection state', () => {
         const transport = new SimpleWebSocketTransport(TEST_SERVER_URL);
 
-        assert.strictEqual(transport.isConnected, false, 'Should start disconnected');
+        assert.strictEqual(
+            transport.isConnected,
+            false,
+            'Should start disconnected',
+        );
 
         transport.close();
-        assert.strictEqual(transport.isConnected, false, 'Should remain disconnected after close');
+        assert.strictEqual(
+            transport.isConnected,
+            false,
+            'Should remain disconnected after close',
+        );
     });
 });

@@ -23,6 +23,7 @@ npm run test:detailed
 ```
 
 **Что показывает**:
+
 - Полные JSON структуры ответов
 - Типы автодополнения с документацией
 - Hover информацию с диапазонами
@@ -40,6 +41,7 @@ npm run test:demo
 ```
 
 **Что показывает**:
+
 - Базовые ответы на простом коде
 - Пошаговое выполнение запросов
 - Состояние соединения с сервером
@@ -56,6 +58,7 @@ npm run test:debug
 ```
 
 **Что показывает**:
+
 - Полное логирование каждого шага
 - Анализ типов данных в ответах
 - Детальную информацию об ошибках
@@ -70,20 +73,21 @@ npm run test:debug
 
 ```json
 {
-  "items": [
-    {
-      "label": "sys",
-      "kind": 9,
-      "detail": "module sys",
-      "documentation": "System-specific parameters and functions",
-      "insertText": "sys"
-    }
-  ],
-  "isIncomplete": false
+    "items": [
+        {
+            "label": "sys",
+            "kind": 9,
+            "detail": "module sys",
+            "documentation": "System-specific parameters and functions",
+            "insertText": "sys"
+        }
+    ],
+    "isIncomplete": false
 }
 ```
 
 **Ключевые поля**:
+
 - `label` - отображаемый текст
 - `kind` - тип элемента (9 = Module)
 - `detail` - дополнительная информация
@@ -92,20 +96,21 @@ npm run test:debug
 
 ### Успешные ответы hover
 
-```json
+````json
 {
-  "contents": {
-    "kind": "markdown",
-    "value": "```python\ndef test() -> int\n```\n\nОписание функции"
-  },
-  "range": {
-    "start": { "line": 2, "character": 4 },
-    "end": { "line": 2, "character": 8 }
-  }
+    "contents": {
+        "kind": "markdown",
+        "value": "```python\ndef test() -> int\n```\n\nОписание функции"
+    },
+    "range": {
+        "start": { "line": 2, "character": 4 },
+        "end": { "line": 2, "character": 8 }
+    }
 }
-```
+````
 
 **Ключевые поля**:
+
 - `contents` - содержимое подсказки
 - `range` - диапазон текста, к которому относится hover
 
@@ -118,6 +123,7 @@ npm run test:debug
 ```
 
 **Возможные причины**:
+
 - Неправильная позиция курсора
 - Контекст недостаточен для анализа
 - Сервер не поддерживает данный тип запроса
@@ -127,44 +133,50 @@ npm run test:debug
 ### Изучение автодополнения импортов
 
 1. Запустите детальные тесты:
-   ```bash
-   npm run test:detailed
-   ```
+
+    ```bash
+    npm run test:detailed
+    ```
 
 2. Найдите секцию "АВТОДОПОЛНЕНИЕ ПОСЛЕ import":
-   ```
-   🔍 Позиция запроса: строка 1, символ 7 (после "import ")
-   📦 ПОЛНЫЙ JSON ОТВЕТ:
-   ```
+
+    ```
+    🔍 Позиция запроса: строка 1, символ 7 (после "import ")
+    📦 ПОЛНЫЙ JSON ОТВЕТ:
+    ```
 
 3. Анализируйте структуру ответа для понимания доступных модулей
 
 ### Диагностика проблем с hover
 
 1. Запустите отладочные тесты:
-   ```bash
-   npm run test:debug
-   ```
+
+    ```bash
+    npm run test:debug
+    ```
 
 2. Найдите секцию "ОТЛАДКА HOVER":
-   ```
-   📊 Анализ hover ответа:
-      - Тип: object
-      - Конструктор: Object
-      - Является null: false
-   ```
+
+    ```
+    📊 Анализ hover ответа:
+       - Тип: object
+       - Конструктор: Object
+       - Является null: false
+    ```
 
 3. Проверьте, есть ли содержимое в ответе
 
 ### Проверка доступности сервера
 
 Если видите сообщение:
+
 ```
 🔌 LSP сервер недоступен на адресе: ws://127.0.0.1:8000/lsp/python
 💡 Убедитесь, что сервер запущен и слушает указанный порт
 ```
 
 **Решение**:
+
 1. Убедитесь, что LSP сервер запущен
 2. Проверьте правильность URL в тестах
 3. Убедитесь, что порт не заблокирован
@@ -174,6 +186,7 @@ npm run test:debug
 ### 1. Начните с простого
 
 Используйте демонстрационные тесты для базовой проверки:
+
 ```bash
 npm run test:demo
 ```
@@ -181,10 +194,11 @@ npm run test:demo
 ### 2. Проверьте параметры запроса
 
 В отладочных тестах всегда выводятся параметры:
+
 ```json
 {
-  "textDocument": { "uri": "file:///debug.py" },
-  "position": { "line": 0, "character": 7 }
+    "textDocument": { "uri": "file:///debug.py" },
+    "position": { "line": 0, "character": 7 }
 }
 ```
 
@@ -193,6 +207,7 @@ npm run test:demo
 ### 3. Анализируйте тип ответа
 
 Обращайте внимание на анализ типов:
+
 ```
 📊 Анализ ответа:
    - Тип: object
@@ -203,6 +218,7 @@ npm run test:demo
 ### 4. Изучайте логи соединения
 
 Следите за состоянием соединения:
+
 ```
 [ConnectionManager:INFO] State changed: connecting -> running
 [ConnectionManager:INFO] LSP connection established
@@ -211,11 +227,12 @@ npm run test:demo
 ### 5. Проверяйте capabilities
 
 В sanity тестах выводятся возможности сервера:
+
 ```json
 {
-  "completionProvider": true,
-  "hoverProvider": true,
-  "definitionProvider": true
+    "completionProvider": true,
+    "hoverProvider": true,
+    "definitionProvider": true
 }
 ```
 
@@ -231,6 +248,7 @@ npm run test:demo
 4. Обновите документацию
 
 Пример структуры нового теста:
+
 ```typescript
 describe('Мой тест', () => {
     it('должен показать что-то интересное', async () => {
@@ -243,7 +261,7 @@ describe('Мой тест', () => {
             },
             error: async (error) => {
                 console.log('❌ Ошибка:', error.message);
-            }
+            },
         });
     });
 });

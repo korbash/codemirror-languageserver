@@ -43,7 +43,9 @@ export class WebSocketTransport {
                     this._connectPromise = null;
 
                     // Create a proper error message for connection refused
-                    const error = new Error(`ECONNREFUSED: Connection refused to ${this._url}`);
+                    const error = new Error(
+                        `ECONNREFUSED: Connection refused to ${this._url}`,
+                    );
                     reject(error);
                 };
 
@@ -60,7 +62,6 @@ export class WebSocketTransport {
                         reject(new Error(`Connection timeout to ${this._url}`));
                     }
                 }, 10000); // 10 second timeout
-
             } catch (error) {
                 this._connectPromise = null;
                 reject(error);
@@ -83,7 +84,9 @@ export class WebSocketTransport {
      */
     get connection(): WebSocket {
         if (!this._isConnected || !this._websocket) {
-            throw new Error('WebSocket is not connected. Call connect() first.');
+            throw new Error(
+                'WebSocket is not connected. Call connect() first.',
+            );
         }
         return this._websocket;
     }
@@ -105,7 +108,9 @@ export class WebSocketTransport {
      */
     send(message: string): void {
         if (!this._isConnected || !this._websocket) {
-            throw new Error('WebSocket is not connected. Call connect() first.');
+            throw new Error(
+                'WebSocket is not connected. Call connect() first.',
+            );
         }
         this._websocket.send(message);
     }
@@ -115,7 +120,9 @@ export class WebSocketTransport {
      */
     onMessage(handler: (data: string) => void): () => void {
         if (!this._websocket) {
-            throw new Error('WebSocket is not connected. Call connect() first.');
+            throw new Error(
+                'WebSocket is not connected. Call connect() first.',
+            );
         }
 
         const messageHandler = (event: MessageEvent) => {
@@ -135,7 +142,9 @@ export class WebSocketTransport {
      */
     onError(handler: (error: Error) => void): () => void {
         if (!this._websocket) {
-            throw new Error('WebSocket is not connected. Call connect() first.');
+            throw new Error(
+                'WebSocket is not connected. Call connect() first.',
+            );
         }
 
         const errorHandler = (event: Event) => {
@@ -155,7 +164,9 @@ export class WebSocketTransport {
      */
     onClose(handler: () => void): () => void {
         if (!this._websocket) {
-            throw new Error('WebSocket is not connected. Call connect() first.');
+            throw new Error(
+                'WebSocket is not connected. Call connect() first.',
+            );
         }
 
         const closeHandler = () => {

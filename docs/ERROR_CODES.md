@@ -15,14 +15,14 @@ The Language Server Protocol (LSP) error handling system is built on top of JSON
 
 These codes are defined by the [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification) and are used across all JSON-RPC implementations, not just LSP.
 
-| Code | Constant | Description |
-|------|----------|-------------|
-| -32700 | `ErrorCodes.ParseError` | Invalid JSON was received by the server |
-| -32600 | `ErrorCodes.InvalidRequest` | The JSON sent is not a valid Request object |
-| -32601 | `ErrorCodes.MethodNotFound` | The method does not exist / is not available |
-| -32602 | `ErrorCodes.InvalidParams` | Invalid method parameter(s) |
-| -32603 | `ErrorCodes.InternalError` | Internal JSON-RPC error |
-| -32099 to -32000 | Reserved range | Implementation-defined server errors |
+| Code             | Constant                    | Description                                  |
+| ---------------- | --------------------------- | -------------------------------------------- |
+| -32700           | `ErrorCodes.ParseError`     | Invalid JSON was received by the server      |
+| -32600           | `ErrorCodes.InvalidRequest` | The JSON sent is not a valid Request object  |
+| -32601           | `ErrorCodes.MethodNotFound` | The method does not exist / is not available |
+| -32602           | `ErrorCodes.InvalidParams`  | Invalid method parameter(s)                  |
+| -32603           | `ErrorCodes.InternalError`  | Internal JSON-RPC error                      |
+| -32099 to -32000 | Reserved range              | Implementation-defined server errors         |
 
 **Additional Microsoft Implementation Codes:**
 | Code | Constant | Description |
@@ -38,12 +38,12 @@ These codes are defined by the [JSON-RPC 2.0 Specification](https://www.jsonrpc.
 
 These codes are specific to the Language Server Protocol and are defined by Microsoft's `vscode-languageserver-protocol`.
 
-| Code | Constant | Description |
-|------|----------|-------------|
-| -32800 | `LSPErrorCodes.RequestCancelled` | Request was cancelled by the client |
-| -32801 | `LSPErrorCodes.ContentModified` | Content was modified, making the request invalid |
-| -32802 | `LSPErrorCodes.ServerCancelled` | Request was cancelled by the server |
-| -32803 | `LSPErrorCodes.RequestFailed` | Request failed to execute |
+| Code   | Constant                         | Description                                      |
+| ------ | -------------------------------- | ------------------------------------------------ |
+| -32800 | `LSPErrorCodes.RequestCancelled` | Request was cancelled by the client              |
+| -32801 | `LSPErrorCodes.ContentModified`  | Content was modified, making the request invalid |
+| -32802 | `LSPErrorCodes.ServerCancelled`  | Request was cancelled by the server              |
+| -32803 | `LSPErrorCodes.RequestFailed`    | Request failed to execute                        |
 
 **Reserved Range:** -32899 to -32800 (LSP reserved error range)
 
@@ -57,11 +57,13 @@ These codes are specific to the Language Server Protocol and are defined by Micr
 ### Different Purposes
 
 **JSON-RPC Codes (`ErrorCodes`)** handle:
+
 - Protocol-level errors (malformed JSON, invalid requests)
 - Transport-level errors (connection issues, serialization problems)
 - Generic RPC errors (method not found, invalid parameters)
 
 **LSP Codes (`LSPErrorCodes`)** handle:
+
 - Language service specific scenarios (content modification during processing)
 - Request lifecycle management (client/server cancellation)
 - LSP workflow errors (initialization failures, capability mismatches)
@@ -78,10 +80,10 @@ const responseError = new ResponseError(-32601, 'Method not found');
 const lspError = convertResponseError(responseError, 'textDocument/hover');
 
 // Now has both standard Error interface AND LSP-specific information
-console.log(lspError.message);        // "Method not found"
-console.log(lspError.code);          // -32601
+console.log(lspError.message); // "Method not found"
+console.log(lspError.code); // -32601
 console.log(lspError.getErrorType()); // "Method Not Found"
-console.log(lspError.method);        // "textDocument/hover"
+console.log(lspError.method); // "textDocument/hover"
 ```
 
 ### Error Type Recognition
@@ -92,7 +94,7 @@ function handleLSPError(error: Error) {
         // Has LSP-specific properties
         switch (error.code) {
             case ErrorCodes.MethodNotFound:
-                return 'This LSP server doesn\'t support this feature';
+                return "This LSP server doesn't support this feature";
             case LSPErrorCodes.RequestCancelled:
                 return 'Request was cancelled';
             case ErrorCodes.ServerNotInitialized:
@@ -114,11 +116,11 @@ function shouldRetryRequest(error: Error): boolean {
     if (isLSPError(error)) {
         // Never retry these LSP/JSON-RPC errors
         const noRetryErrors = [
-            LSPErrorCodes.RequestCancelled,    // Client cancelled
-            LSPErrorCodes.ServerCancelled,     // Server cancelled
-            ErrorCodes.MethodNotFound,         // Method doesn't exist
-            ErrorCodes.InvalidParams,          // Bad parameters
-            ErrorCodes.ServerNotInitialized,   // Server state issue
+            LSPErrorCodes.RequestCancelled, // Client cancelled
+            LSPErrorCodes.ServerCancelled, // Server cancelled
+            ErrorCodes.MethodNotFound, // Method doesn't exist
+            ErrorCodes.InvalidParams, // Bad parameters
+            ErrorCodes.ServerNotInitialized, // Server state issue
         ];
 
         return !noRetryErrors.includes(error.code);
@@ -131,29 +133,32 @@ function shouldRetryRequest(error: Error): boolean {
 
 ## Error Code Ranges Summary
 
-| Range | Purpose | Examples |
-|-------|---------|----------|
-| -32768 to -32000 | JSON-RPC 2.0 reserved | Parse errors, invalid requests |
-| -32099 to -32000 | JSON-RPC implementation-defined | Microsoft's connection errors |
-| -32899 to -32800 | LSP reserved range | LSP-specific errors |
-| 1 to ∞ | Application-specific | Custom application errors |
+| Range            | Purpose                         | Examples                       |
+| ---------------- | ------------------------------- | ------------------------------ |
+| -32768 to -32000 | JSON-RPC 2.0 reserved           | Parse errors, invalid requests |
+| -32099 to -32000 | JSON-RPC implementation-defined | Microsoft's connection errors  |
+| -32899 to -32800 | LSP reserved range              | LSP-specific errors            |
+| 1 to ∞           | Application-specific            | Custom application errors      |
 
 ## Best Practices
 
 ### When to Use Each Type
 
 **Use `ErrorCodes` constants for:**
+
 - JSON/RPC protocol violations
 - Method availability issues
 - Parameter validation errors
 - Server state problems
 
 **Use `LSPErrorCodes` constants for:**
+
 - Request cancellation scenarios
 - Content modification during processing
 - LSP-specific workflow errors
 
 **Use raw numbers for:**
+
 - Custom application-specific errors (positive numbers)
 - Vendor-specific extensions (documented ranges)
 
@@ -165,7 +170,7 @@ const error = new LSPError(
     'Method "textDocument/semanticTokens" not supported by Python LSP server',
     ErrorCodes.MethodNotFound,
     { supportedMethods: ['textDocument/completion', 'textDocument/hover'] },
-    'textDocument/semanticTokens'
+    'textDocument/semanticTokens',
 );
 
 // Bad: Generic, unhelpful message
@@ -177,6 +182,7 @@ const error = new LSPError('Error occurred', ErrorCodes.InternalError);
 If you're updating from the old dual-error system:
 
 ### Before (ResponseError + Error)
+
 ```typescript
 if (error instanceof ResponseError) {
     switch (error.code) {
@@ -190,6 +196,7 @@ if (error instanceof ResponseError) {
 ```
 
 ### After (Unified Error with LSPError)
+
 ```typescript
 const normalizedError = normalizeError(error, methodName);
 if (isLSPError(normalizedError)) {

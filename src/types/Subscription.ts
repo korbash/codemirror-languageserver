@@ -14,7 +14,7 @@ import { Disposable } from 'vscode-languageserver-protocol';
 enum SubscriptionState {
     Active = 'active',
     Disposed = 'disposed',
-    Detached = 'detached'
+    Detached = 'detached',
 }
 
 /**
@@ -26,7 +26,7 @@ export class Subscription implements Disposable {
     constructor(
         private readonly cleanup: () => void,
         private readonly resource: string,
-        private readonly method?: string
+        private readonly method?: string,
     ) {}
 
     /**
@@ -73,7 +73,10 @@ export class Subscription implements Disposable {
             try {
                 this.cleanup();
             } catch (error) {
-                console.error(`Error disposing subscription ${this.resource}:`, error);
+                console.error(
+                    `Error disposing subscription ${this.resource}:`,
+                    error,
+                );
             }
         }
     }
@@ -158,14 +161,19 @@ export class CompositeSubscription implements Disposable {
             try {
                 subscription.dispose();
             } catch (error) {
-                errors.push(error instanceof Error ? error : new Error(String(error)));
+                errors.push(
+                    error instanceof Error ? error : new Error(String(error)),
+                );
             }
         }
 
         this.subscriptions.clear();
 
         if (errors.length > 0) {
-            console.error('Errors occurred while disposing composite subscription:', errors);
+            console.error(
+                'Errors occurred while disposing composite subscription:',
+                errors,
+            );
         }
     }
 
@@ -190,14 +198,16 @@ export class CompositeSubscription implements Disposable {
      * Get all active subscriptions
      */
     getActive(): Subscription[] {
-        return Array.from(this.subscriptions).filter(sub => sub.isActive);
+        return Array.from(this.subscriptions).filter((sub) => sub.isActive);
     }
 
     /**
      * Get subscriptions for a specific method
      */
     getByMethod(method: string): Subscription[] {
-        return Array.from(this.subscriptions).filter(sub => sub.methodName === method);
+        return Array.from(this.subscriptions).filter(
+            (sub) => sub.methodName === method,
+        );
     }
 }
 
@@ -207,7 +217,7 @@ export class CompositeSubscription implements Disposable {
 export function createSubscription(
     cleanup: () => void,
     resource: string,
-    method?: string
+    method?: string,
 ): Subscription {
     return new Subscription(cleanup, resource, method);
 }
@@ -230,13 +240,9 @@ export type SubscriptionFactory<T> = (handler: T) => Subscription;
 export function wrapDisposable(
     disposable: Disposable,
     resource: string,
-    method?: string
+    method?: string,
 ): Subscription {
-    return new Subscription(
-        () => disposable.dispose(),
-        resource,
-        method
-    );
+    return new Subscription(() => disposable.dispose(), resource, method);
 }
 
 /**
@@ -276,8 +282,10 @@ export class SubscriptionTracker {
     }
 
     getActiveCount(): number {
-        return Array.from(this.activeSubscriptions.values())
-            .reduce((total, subs) => total + subs.length, 0);
+        return Array.from(this.activeSubscriptions.values()).reduce(
+            (total, subs) => total + subs.length,
+            0,
+        );
     }
 
     getResourceCount(): number {

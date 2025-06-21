@@ -53,7 +53,7 @@ describe('Connection Management Tests', () => {
                     );
                     return;
                 }
-                throw new Error(errors[0]?.message || "Unknown error");
+                throw new Error(errors[0]?.message || 'Unknown error');
             }
         });
 
@@ -93,7 +93,7 @@ describe('Connection Management Tests', () => {
                         testPassed = true;
                         return;
                     }
-                    throw new Error(errors[0]?.message || "Unknown error");
+                    throw new Error(errors[0]?.message || 'Unknown error');
                 },
                 cancelled: async () => {
                     console.warn('⚠️  Initialization cancelled');
@@ -245,7 +245,7 @@ describe('Connection Management Tests', () => {
                         );
                         return;
                     }
-                    throw new Error(errors[0]?.message || "Unknown error");
+                    throw new Error(errors[0]?.message || 'Unknown error');
                 },
                 cancelled: async () => {
                     console.warn('⚠️  Cancelled during dispose test');
@@ -290,7 +290,9 @@ describe('Connection Management Tests', () => {
                                 );
                                 return;
                             }
-                            throw new Error(errors[0]?.message || "Unknown error");
+                            throw new Error(
+                                errors[0]?.message || 'Unknown error',
+                            );
                         },
                         cancelled: async () => {
                             console.warn('⚠️  Cancelled in concurrent test');

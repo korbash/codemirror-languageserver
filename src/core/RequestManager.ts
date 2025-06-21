@@ -3,7 +3,7 @@
  */
 
 import { Connection } from 'vscode-languageserver';
-import { ErrorCodes } from 'vscode-languageserver-protocol';
+import { ErrorCodes, LSPErrorCodes } from 'vscode-languageserver-protocol';
 import { Result, Ok, Err, AsyncResult } from 'ts-results-es';
 import { LSPMethodValue, RequestOptions } from '../types/index.js';
 import { LSPError } from '../types/ErrorConverter.js';
@@ -60,7 +60,7 @@ export class RequestManager {
                 abortController.abort(requestOptions.abortSignal.reason);
             } else {
                 requestOptions.abortSignal.addEventListener('abort', () => {
-                    abortController.abort(requestOptions.abortSignal!.reason);
+                    abortController.abort(requestOptions.abortSignal.reason);
                 });
             }
         }
@@ -75,11 +75,15 @@ export class RequestManager {
         this.pendingRequests.set(requestId, pendingRequest);
         this.stats.totalRequests++;
 
+        // Pass user abort signal to executeRequest
+        // executeRequest will handle individual attempt timeouts
+
         const resultPromise = this.executeRequest<P, R>(
             method,
             params,
             pendingRequest,
             requestOptions,
+            pendingRequest.abortController.signal,
         ).finally(() => {
             this.pendingRequests.delete(requestId);
         });
@@ -117,65 +121,65 @@ export class RequestManager {
     }
 
     /**
-     * Execute request with retry logic
+     * Execute request with retry logic using functional Result patterns
      */
     private async executeRequest<P, R>(
         method: LSPMethodValue | string,
         params: P,
         pendingRequest: PendingRequest,
         options: Required<RequestOptions>,
+        abortSignal: AbortSignal,
     ): Promise<Result<R, LSPError[]>> {
         const allErrors: LSPError[] = [];
 
         for (let attempt = 0; attempt <= options.retries; attempt++) {
-            try {
-                pendingRequest.retryCount = attempt;
+            pendingRequest.retryCount = attempt;
 
-                if (pendingRequest.abortController.signal.aborted) {
-                    throw new Error('Request was aborted');
-                }
+            // Check if aborted early
+            if (pendingRequest.abortController.signal.aborted) {
+                this.stats.cancelledRequests++;
+                return Err([
+                    ...allErrors,
+                    new LSPError(
+                        'Request was aborted',
+                        LSPErrorCodes.RequestCancelled,
+                        method,
+                    ),
+                ]);
+            }
 
-                // Setup timeout for this attempt
-                const timeoutController = new AbortController();
-                const timeout = setTimeout(() => {
-                    timeoutController.abort('Request timeout');
-                }, options.timeout);
+            // Calculate timeout for this attempt (grows with retries)
+            const attemptTimeout =
+                options.firstTimeout *
+                Math.pow(options.retryCoefficient, attempt);
 
-                // Combine abort signals
-                const combinedController = new AbortController();
-                const cleanup = () => {
-                    clearTimeout(timeout);
-                    combinedController.abort();
-                };
+            // Create timeout controller for this attempt
+            const timeoutController = new AbortController();
+            const timeout = setTimeout(() => {
+                timeoutController.abort('Request timeout');
+            }, attemptTimeout);
 
-                pendingRequest.abortController.signal.addEventListener(
-                    'abort',
-                    cleanup,
-                );
-                timeoutController.signal.addEventListener('abort', cleanup);
+            // Combine user abort signal with timeout for this attempt
+            const combinedSignal = AbortSignal.any([
+                abortSignal,
+                timeoutController.signal,
+            ]);
 
+            // Use Result.wrapAsync for the request operation
+            const attemptResult = await Result.wrapAsync(async () => {
                 try {
                     const result = await this.connection.sendRequest(
                         method,
                         params,
-                        this.createCancellationToken(combinedController.signal),
+                        this.createCancellationToken(combinedSignal),
                     );
-                    clearTimeout(timeout);
                     this.stats.successfulRequests++;
-                    return Ok(result as R);
+                    return result as R;
                 } finally {
-                    pendingRequest.abortController.signal.removeEventListener(
-                        'abort',
-                        cleanup,
-                    );
-                    timeoutController.signal.removeEventListener(
-                        'abort',
-                        cleanup,
-                    );
                     clearTimeout(timeout);
                 }
-            } catch (error) {
-                const normalizedError =
+            }).then((result) =>
+                result.mapErr((error) =>
                     error instanceof LSPError
                         ? error
                         : new LSPError(
@@ -184,29 +188,27 @@ export class RequestManager {
                                   : String(error),
                               ErrorCodes.InternalError,
                               method,
-                          );
-                allErrors.push(normalizedError);
+                          ),
+                ),
+            );
 
-                if (pendingRequest.abortController.signal.aborted) {
-                    this.stats.cancelledRequests++;
-                    return Err(allErrors);
-                }
+            // Handle successful result
+            if (attemptResult.isOk()) {
+                return Ok(attemptResult.unwrap());
+            }
 
-                if (
-                    normalizedError.shouldNotRetry ||
-                    attempt >= options.retries
-                ) {
-                    this.stats.failedRequests++;
-                    return Err(allErrors);
-                }
+            // Handle error case
+            const error = attemptResult.unwrapErr();
+            allErrors.push(error);
 
-                // Wait before retry with exponential backoff
-                if (attempt < options.retries) {
-                    const delay =
-                        options.firstTimeout *
-                        Math.pow(options.retryCoefficient, attempt);
-                    await this.sleep(delay);
-                }
+            if (pendingRequest.abortController.signal.aborted) {
+                this.stats.cancelledRequests++;
+                return Err(allErrors);
+            }
+
+            if (error.shouldNotRetry || attempt >= options.retries) {
+                this.stats.failedRequests++;
+                return Err(allErrors);
             }
         }
 

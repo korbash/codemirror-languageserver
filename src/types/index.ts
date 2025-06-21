@@ -42,7 +42,7 @@ import type {
     ProtocolNotificationType,
 } from 'vscode-languageserver-protocol';
 
-import type { Result } from 'ts-results-es';
+import type { Result, AsyncResult } from 'ts-results-es';
 import type { Subscription, CompositeSubscription } from './Subscription.js';
 import type { LSPError } from './ErrorConverter.js';
 

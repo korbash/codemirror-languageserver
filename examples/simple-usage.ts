@@ -21,8 +21,8 @@ async function basicExample(connection: Connection) {
         LSPMethods.TEXTDOCUMENT_COMPLETION,
         {
             textDocument: { uri: 'file:///test.py' },
-            position: { line: 0, character: 0 }
-        }
+            position: { line: 0, character: 0 },
+        },
     );
 
     if (result.success) {
@@ -40,14 +40,14 @@ async function customOptionsExample(connection: Connection) {
         LSPMethods.TEXTDOCUMENT_HOVER,
         {
             textDocument: { uri: 'file:///test.py' },
-            position: { line: 5, character: 10 }
+            position: { line: 5, character: 10 },
         },
         {
-            timeout: 2000,           // 2 second timeout per attempt
-            retries: 2,              // Try up to 3 times total
-            retryCoefficient: 2,     // Exponential backoff: 2x delay each retry
-            firstTimeout: 1000       // Base delay: 1000ms, 2000ms, 4000ms
-        }
+            timeout: 2000, // 2 second timeout per attempt
+            retries: 2, // Try up to 3 times total
+            retryCoefficient: 2, // Exponential backoff: 2x delay each retry
+            firstTimeout: 1000, // Base delay: 1000ms, 2000ms, 4000ms
+        },
     );
 
     console.log('Request result:', result);
@@ -63,12 +63,12 @@ async function cancellationExample(connection: Connection) {
         LSPMethods.TEXTDOCUMENT_DEFINITION,
         {
             textDocument: { uri: 'file:///large-file.py' },
-            position: { line: 1000, character: 50 }
+            position: { line: 1000, character: 50 },
         },
         {
             timeout: 5000,
-            abortSignal: abortController.signal  // Link to external cancellation
-        }
+            abortSignal: abortController.signal, // Link to external cancellation
+        },
     );
 
     // Cancel after 1 second
@@ -94,9 +94,9 @@ async function cancelByIdExample(connection: Connection) {
         {
             textDocument: { uri: 'file:///test.py' },
             position: { line: 10, character: 5 },
-            context: { includeDeclaration: true }
+            context: { includeDeclaration: true },
         },
-        { timeout: 10000 }
+        { timeout: 10000 },
     );
 
     // Get pending request IDs
@@ -105,7 +105,10 @@ async function cancelByIdExample(connection: Connection) {
 
     // Cancel the first pending request
     if (pendingIds.length > 0) {
-        const cancelled = requestManager.cancelRequest(pendingIds[0], 'Manual cancellation');
+        const cancelled = requestManager.cancelRequest(
+            pendingIds[0],
+            'Manual cancellation',
+        );
         console.log('Request cancelled:', cancelled);
     }
 
@@ -128,7 +131,7 @@ async function statsExample(connection: Connection) {
         successful: stats.successfulRequests,
         failed: stats.failedRequests,
         cancelled: stats.cancelledRequests,
-        successRate: `${Math.round(stats.successfulRequests / stats.totalRequests * 100)}%`
+        successRate: `${Math.round((stats.successfulRequests / stats.totalRequests) * 100)}%`,
     });
 }
 
@@ -138,11 +141,13 @@ async function errorHandlingExample(connection: Connection) {
 
     const result = await requestManager.sendRequest(
         LSPMethods.TEXTDOCUMENT_COMPLETION,
-        { /* params */ },
+        {
+            /* params */
+        },
         {
             timeout: 3000,
-            retries: 1
-        }
+            retries: 1,
+        },
     );
 
     // Pattern matching on result type
@@ -183,18 +188,18 @@ async function concurrentExample(connection: Connection) {
         requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_COMPLETION,
             {},
-            { abortSignal: abortController.signal }
+            { abortSignal: abortController.signal },
         ),
         requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_HOVER,
             {},
-            { abortSignal: abortController.signal }
+            { abortSignal: abortController.signal },
         ),
         requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_DEFINITION,
             {},
-            { abortSignal: abortController.signal }
-        )
+            { abortSignal: abortController.signal },
+        ),
     ];
 
     // Cancel all requests after 2 seconds
@@ -204,11 +209,14 @@ async function concurrentExample(connection: Connection) {
 
     const results = await Promise.allSettled(requests);
 
-    console.log('Results:', results.map((r, i) => ({
-        index: i,
-        status: r.status,
-        type: r.status === 'fulfilled' ? r.value.type : 'rejected'
-    })));
+    console.log(
+        'Results:',
+        results.map((r, i) => ({
+            index: i,
+            status: r.status,
+            type: r.status === 'fulfilled' ? r.value.type : 'rejected',
+        })),
+    );
 }
 
 // Export examples for use
@@ -219,7 +227,7 @@ export {
     cancelByIdExample,
     statsExample,
     errorHandlingExample,
-    concurrentExample
+    concurrentExample,
 };
 
 // Usage instructions
