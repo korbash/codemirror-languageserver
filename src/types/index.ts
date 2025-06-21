@@ -9,7 +9,7 @@
 export * from 'vscode-languageserver-protocol';
 
 // === Our Extensions ===
-export * from './LSPResult.js';
+export { Result, Ok, Err, AsyncResult } from 'ts-results-es';
 export * from './Subscription.js';
 export * from './ErrorConverter.js';
 
@@ -42,8 +42,9 @@ import type {
     ProtocolNotificationType,
 } from 'vscode-languageserver-protocol';
 
-import type { LSPResult } from './LSPResult.js';
+import type { Result } from 'ts-results-es';
 import type { Subscription, CompositeSubscription } from './Subscription.js';
+import type { LSPError } from './ErrorConverter.js';
 
 // === Handler Types ===
 export type NotificationHandler<T> = (params: T) => void | Promise<void>;
@@ -140,17 +141,11 @@ export interface PerformanceMetrics {
 }
 
 // === Error Types ===
-export interface LSPError {
-    code: number;
-    message: string;
-    data?: any;
-    method?: string;
-    timestamp: number;
-}
+// LSPError is exported from ErrorConverter.js
 
 // === Type Guards ===
-export function isLSPResult<T>(value: unknown): value is LSPResult<T> {
-    return value instanceof Object && 'match' in value && 'isSuccess' in value;
+export function isResult<T, E>(value: unknown): value is Result<T, E> {
+    return value instanceof Object && 'isOk' in value && 'isErr' in value;
 }
 
 export function isSubscription(value: unknown): value is Subscription {
@@ -313,6 +308,10 @@ export type ExtractResult<T extends LSPMethod> = LSPRequestMap[T][1];
 
 export type ExtractNotificationParams<T extends LSPNotificationMethod> =
     LSPNotificationMap[T];
+
+// === Result Type Aliases ===
+export type LSPResult<T> = Result<T, LSPError[]>;
+export type LSPAsyncResult<T> = AsyncResult<T, LSPError[]>;
 
 // === Advanced Types ===
 export interface TypedConnection {

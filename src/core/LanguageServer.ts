@@ -45,9 +45,11 @@ import {
     ShowMessageNotification,
     LogMessageNotification,
     ResponseError,
+    ErrorCodes,
 } from 'vscode-languageserver-protocol';
 
-import { LSPResult, ConnectionResult } from '../types/LSPResult.js';
+import { Result, Ok, Err, AsyncResult } from 'ts-results-es';
+import { LSPError } from '../types/ErrorConverter.js';
 import { Connection } from 'vscode-languageserver';
 
 import {
@@ -130,107 +132,135 @@ export class LanguageServer implements Disposable {
     /**
      * Initialize the language server
      */
-    async initialize(
+    initialize(
         params?: Partial<InitializeParams>,
-    ): Promise<LSPResult<InitializeResult>> {
+    ): AsyncResult<InitializeResult, LSPError[]> {
         if (this.state !== ServerState.Initial) {
-            return LSPResult.error(
-                new Error(`Cannot initialize server in state: ${this.state}`),
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        `Cannot initialize server in state: ${this.state}`,
+                        ErrorCodes.InternalError,
+                        'initialize',
+                    ),
+                ]),
             );
         }
 
-        try {
-            this.setState(ServerState.Connecting);
+        const initPromise = (async () => {
+            try {
+                this.setState(ServerState.Connecting);
 
-            // Create Microsoft Connection
-            this.connection = await this.connectionManager.connect();
+                // Create Microsoft Connection
+                this.connection = await this.connectionManager.connect();
 
-            // Setup managers with the connection
-            if (this.connection) {
-                this.requestManager = new RequestManager(this.connection);
-                this.subscriptionManager.setConnection(this.connection);
-            } else {
-                throw new Error('Failed to establish connection');
-            }
+                // Setup managers with the connection
+                if (this.connection) {
+                    this.requestManager = new RequestManager(this.connection);
+                    this.subscriptionManager.setConnection(this.connection);
+                } else {
+                    throw new LSPError(
+                        'Failed to establish connection',
+                        ErrorCodes.InternalError,
+                        'initialize',
+                    );
+                }
 
-            // Setup built-in handlers
-            this.setupBuiltinNotificationHandlers();
+                // Setup built-in handlers
+                this.setupBuiltinNotificationHandlers();
 
-            this.setState(ServerState.Initializing);
+                this.setState(ServerState.Initializing);
 
-            // Send initialize request with default client capabilities
-            const initParams: InitializeParams = {
-                processId: null,
-                rootUri: this.options.rootUri,
-                capabilities: this.createDefaultClientCapabilities(),
-                initializationOptions: this.options.initializationOptions,
-                workspaceFolders: this.options.workspaceFolders?.map(
-                    (uri: string) => ({
-                        uri,
-                        name: uri.split('/').pop() || 'workspace',
-                    }),
-                ),
-                ...params,
-            };
+                // Send initialize request with default client capabilities
+                const initParams: InitializeParams = {
+                    processId: null,
+                    rootUri: this.options.rootUri,
+                    capabilities: this.createDefaultClientCapabilities(),
+                    initializationOptions: this.options.initializationOptions,
+                    workspaceFolders: this.options.workspaceFolders?.map(
+                        (uri: string) => ({
+                            uri,
+                            name: uri.split('/').pop() || 'workspace',
+                        }),
+                    ),
+                    ...params,
+                };
 
-            if (!this.requestManager) {
-                return LSPResult.error(
-                    new Error('RequestManager not initialized'),
-                );
-            }
+                const result = await this.requestManager.sendRequest(
+                    LSPMethods.INITIALIZE,
+                    initParams,
+                    {
+                        timeout: 30000,
+                    },
+                ).promise;
 
-            const result = await this.requestManager.sendRequest(
-                LSPMethods.INITIALIZE,
-                initParams,
-                { timeout: 30000 },
-            );
-
-            result.handleResult({
-                success: (initResult: any) => {
-                    const result = initResult as InitializeResult;
-                    this.capabilities = result.capabilities;
+                if (result.isOk()) {
+                    const initResult = result.unwrap() as InitializeResult;
+                    this.capabilities = initResult.capabilities;
                     this.setState(ServerState.Running);
-                    this.emitCapabilitiesChange(result.capabilities);
+                    this.emitCapabilitiesChange(initResult.capabilities);
                     this.log(
                         'info',
                         'Language server initialized successfully',
                     );
-                },
-                error: (error: Error) => {
+                    return Ok(initResult);
+                } else {
                     this.setState(ServerState.Error);
-                },
-            });
-            return result as LSPResult<InitializeResult>;
-        } catch (error) {
-            this.setState(ServerState.Error);
-            return LSPResult.error(
-                error instanceof Error ? error : new Error(String(error)),
-            );
-        }
+                    return result;
+                }
+            } catch (error) {
+                const lspError =
+                    error instanceof LSPError
+                        ? error
+                        : new LSPError(
+                              error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                              ErrorCodes.InternalError,
+                              'initialize',
+                          );
+                this.setState(ServerState.Error);
+                return Err([lspError]);
+            }
+        })();
+
+        return new AsyncResult(initPromise);
     }
 
     /**
-     * Shutdown the language server gracefully
+     * Shutdown the language server connection
      */
-    async shutdown(): Promise<LSPResult<void>> {
+    shutdown(): AsyncResult<void, LSPError[]> {
         if (
             this.state === ServerState.Stopped ||
             this.state === ServerState.Stopping
         ) {
-            return LSPResult.success(undefined);
+            return new AsyncResult(Ok(undefined));
         }
 
         this.setState(ServerState.Stopping);
 
-        try {
-            await this.connectionManager.close();
-            this.setState(ServerState.Stopped);
-            return LSPResult.success(undefined);
-        } catch (error) {
-            return LSPResult.error(
-                error instanceof Error ? error : new Error(String(error)),
-            );
-        }
+        return new AsyncResult(
+            this.connectionManager
+                .close()
+                .then(() => {
+                    this.setState(ServerState.Stopped);
+                    return Ok(undefined);
+                })
+                .catch((error) => {
+                    const lspError =
+                        error instanceof LSPError
+                            ? error
+                            : new LSPError(
+                                  error instanceof Error
+                                      ? error.message
+                                      : String(error),
+                                  ErrorCodes.InternalError,
+                                  'shutdown',
+                              );
+                    return Err([lspError]);
+                }),
+        );
     }
 
     // === Typed LSP Request Methods ===
@@ -238,12 +268,20 @@ export class LanguageServer implements Disposable {
     /**
      * Send completion request
      */
-    async completion(
+    completion(
         params: CompletionParams,
         options?: RequestOptions,
-    ): Promise<LSPResult<CompletionList | CompletionItem[] | null>> {
+    ): AsyncResult<CompletionList | CompletionItem[] | null, LSPError[]> {
         if (!this.requestManager) {
-            return LSPResult.error(new Error('Server not initialized'));
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        'Server not initialized',
+                        ErrorCodes.ServerNotInitialized,
+                        'completion',
+                    ),
+                ]),
+            );
         }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_COMPLETION,
@@ -255,12 +293,20 @@ export class LanguageServer implements Disposable {
     /**
      * Send hover request
      */
-    async hover(
+    hover(
         params: HoverParams,
         options?: RequestOptions,
-    ): Promise<LSPResult<Hover | null>> {
+    ): AsyncResult<Hover | null, LSPError[]> {
         if (!this.requestManager) {
-            return LSPResult.error(new Error('Server not initialized'));
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        'Server not initialized',
+                        ErrorCodes.ServerNotInitialized,
+                        'hover',
+                    ),
+                ]),
+            );
         }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_HOVER,
@@ -272,18 +318,25 @@ export class LanguageServer implements Disposable {
     /**
      * Send definition request
      */
-    async definition(
+    definition(
         params: DefinitionParams,
         options?: RequestOptions,
-    ): Promise<
-        LSPResult<
-            | Definition
-            | import('vscode-languageserver-protocol').LocationLink[]
-            | null
-        >
+    ): AsyncResult<
+        | Definition
+        | import('vscode-languageserver-protocol').LocationLink[]
+        | null,
+        LSPError[]
     > {
         if (!this.requestManager) {
-            return LSPResult.error(new Error('Server not initialized'));
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        'Server not initialized',
+                        ErrorCodes.ServerNotInitialized,
+                        'definition',
+                    ),
+                ]),
+            );
         }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_DEFINITION,
@@ -295,12 +348,20 @@ export class LanguageServer implements Disposable {
     /**
      * Send references request
      */
-    async references(
+    references(
         params: ReferenceParams,
         options?: RequestOptions,
-    ): Promise<LSPResult<Location[] | null>> {
+    ): AsyncResult<Location[] | null, LSPError[]> {
         if (!this.requestManager) {
-            return LSPResult.error(new Error('Server not initialized'));
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        'Server not initialized',
+                        ErrorCodes.ServerNotInitialized,
+                        'references',
+                    ),
+                ]),
+            );
         }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_REFERENCES,
@@ -312,12 +373,20 @@ export class LanguageServer implements Disposable {
     /**
      * Send document symbol request
      */
-    async documentSymbol(
+    documentSymbol(
         params: DocumentSymbolParams,
         options?: RequestOptions,
-    ): Promise<LSPResult<DocumentSymbol[] | SymbolInformation[] | null>> {
+    ): AsyncResult<DocumentSymbol[] | SymbolInformation[] | null, LSPError[]> {
         if (!this.requestManager) {
-            return LSPResult.error(new Error('Server not initialized'));
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        'Server not initialized',
+                        ErrorCodes.ServerNotInitialized,
+                        'documentSymbol',
+                    ),
+                ]),
+            );
         }
         return this.requestManager.sendRequest(
             LSPMethods.TEXTDOCUMENT_DOCUMENTSYMBOL,
@@ -329,19 +398,33 @@ export class LanguageServer implements Disposable {
     /**
      * Generic typed request method
      */
-    async request<K extends LSPMethod>(
+    request<K extends LSPMethod>(
         method: K,
         params: ExtractParams<K>,
         options?: RequestOptions,
-    ): Promise<LSPResult<ExtractResult<K>>> {
+    ): AsyncResult<ExtractResult<K>, LSPError[]> {
         if (!this.connection) {
-            return LSPResult.error(new Error('No active connection'));
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        'No active connection',
+                        ErrorCodes.InternalError,
+                        method,
+                    ),
+                ]),
+            );
         }
-
         if (!this.requestManager) {
-            return LSPResult.error(new Error('Server not initialized'));
+            return new AsyncResult(
+                Err([
+                    new LSPError(
+                        'Server not initialized',
+                        ErrorCodes.ServerNotInitialized,
+                        method,
+                    ),
+                ]),
+            );
         }
-
         return this.requestManager.sendRequest(method, params, options);
     }
 
@@ -403,7 +486,11 @@ export class LanguageServer implements Disposable {
         params: T,
     ): Promise<void> {
         if (!this.connection) {
-            throw new Error('No active connection');
+            throw new LSPError(
+                'No active connection',
+                ErrorCodes.InternalError,
+                notificationType.method,
+            );
         }
 
         return this.connection.sendNotification(
@@ -591,48 +678,28 @@ export class LanguageServer implements Disposable {
     /**
      * Create and initialize a LanguageServer instance
      */
-    static async createAndInitialize(
+    static createAndInitialize(
         serverUri: string,
         options: LanguageServerOptions,
         initParams?: Partial<InitializeParams>,
-    ): Promise<LSPResult<LanguageServer>> {
-        try {
-            const server = new LanguageServer(serverUri, options);
-            const initResult = await server.initialize(initParams);
-
-            initResult.handleResult({
-                success: () => {
-                    // Server is ready to use
-                },
-                error: (error: any) => {
-                    server.dispose();
-                },
+    ): AsyncResult<LanguageServer, LSPError[]> {
+        const server = new LanguageServer(serverUri, options);
+        return server
+            .initialize(initParams)
+            .map(() => server)
+            .mapErr((errors: LSPError[]) => {
+                // Failed - dispose server and return errors from initialization
+                server.dispose();
+                return errors.length > 0
+                    ? errors
+                    : [
+                          new LSPError(
+                              'Unknown initialization error',
+                              ErrorCodes.InternalError,
+                              'createAndInitialize',
+                          ),
+                      ];
             });
-
-            // Transform LSPResult<InitializeResult> to LSPResult<LanguageServer>
-            switch (initResult.getState()) {
-                case ConnectionResult.Success:
-                    return LSPResult.success(server);
-                case ConnectionResult.Timeout:
-                    return LSPResult.timeout('Server initialization timed out');
-                case ConnectionResult.Cancelled:
-                    return LSPResult.cancelled(
-                        'Server initialization was cancelled',
-                    );
-                case ConnectionResult.ConnectionReset:
-                    return LSPResult.connectionReset(
-                        'Connection lost during initialization',
-                    );
-                case ConnectionResult.Error:
-                    return LSPResult.error(
-                        initResult.getError() || new Error('Unknown error'),
-                    );
-            }
-        } catch (error) {
-            return LSPResult.error(
-                error instanceof Error ? error : new Error(String(error)),
-            );
-        }
     }
 
     // === Private Methods ===

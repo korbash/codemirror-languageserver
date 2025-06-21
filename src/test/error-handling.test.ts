@@ -1,11 +1,10 @@
 /**
- * Error Handling Tests
+ * Simplified Error Handling Tests
  *
- * Tests for unified error handling using ErrorConverter utilities.
- * Demonstrates how ResponseError is converted to LSPError for consistent handling.
+ * Tests for the simplified LSP error system using LSPError (single error) and LSPResult (array of errors)
  */
 
-import assert from 'assert';
+import { strict as assert } from 'assert';
 import {
     ResponseError,
     LSPErrorCodes,
@@ -13,66 +12,57 @@ import {
 } from 'vscode-languageserver-protocol';
 import {
     LSPError,
-    convertResponseError,
     normalizeError,
-    isLSPError,
-    isResponseError,
     isCancellationError,
     shouldNotRetryError,
-    getErrorMessage,
-    getErrorCode,
-    formatErrorForLogging,
+    createServerNotInitializedError,
+    createNoConnectionError,
+    createCancelledError,
+    createTimeoutError,
+    createLSPErrorFromError,
+    createGenericError,
 } from '../types/ErrorConverter.js';
-import { LSPResult } from '../types/LSPResult.js';
+import { Result, Ok, Err } from 'ts-results-es';
 
-describe('Unified Error Handling', () => {
+describe('Simplified Error Handling', () => {
     describe('LSPError Class', () => {
-        it('should create LSPError with all properties', () => {
+        it('should create LSPError with basic properties', () => {
             const error = new LSPError(
                 'Test error message',
                 ErrorCodes.MethodNotFound,
-                { additional: 'data' },
                 'textDocument/completion',
+                { additional: 'data' },
             );
 
             assert.strictEqual(error.name, 'LSPError');
             assert.strictEqual(error.message, 'Test error message');
-            assert.strictEqual(error.code, -32601);
-            assert.deepStrictEqual(error.data, { additional: 'data' });
+            assert.strictEqual(error.code, ErrorCodes.MethodNotFound);
             assert.strictEqual(error.method, 'textDocument/completion');
-            assert.ok(error.timestamp > 0);
+            assert.deepStrictEqual(error.data, { additional: 'data' });
             assert.ok(error instanceof Error);
             assert.ok(error instanceof LSPError);
         });
 
-        it('should correctly identify cancellation errors', () => {
-            const requestCancelled = new LSPError(
-                'Request cancelled',
+        it('should determine correct error types', () => {
+            const cancelledError = new LSPError(
+                'Cancelled',
                 LSPErrorCodes.RequestCancelled,
             );
-            const serverCancelled = new LSPError(
+            const serverCancelledError = new LSPError(
                 'Server cancelled',
                 LSPErrorCodes.ServerCancelled,
             );
-            const otherError = new LSPError('Other error', -32603);
-
-            assert.ok(requestCancelled.isCancellation());
-            assert.ok(serverCancelled.isCancellation());
-            assert.ok(!otherError.isCancellation());
-        });
-
-        it('should correctly identify content modification errors', () => {
-            const contentModified = new LSPError(
-                'Content modified',
-                LSPErrorCodes.ContentModified,
+            const genericError = new LSPError(
+                'Generic error',
+                ErrorCodes.InternalError,
             );
-            const otherError = new LSPError('Other error', -32603);
 
-            assert.ok(contentModified.isContentModified());
-            assert.ok(!otherError.isContentModified());
+            assert.strictEqual(cancelledError.getType(), 'cancelled');
+            assert.strictEqual(serverCancelledError.getType(), 'cancelled');
+            assert.strictEqual(genericError.getType(), 'error');
         });
 
-        it('should correctly determine retry logic', () => {
+        it('should determine retry logic correctly', () => {
             const shouldNotRetryErrors = [
                 new LSPError('Cancelled', LSPErrorCodes.RequestCancelled),
                 new LSPError('Server cancelled', LSPErrorCodes.ServerCancelled),
@@ -89,93 +79,45 @@ describe('Unified Error Handling', () => {
             shouldNotRetryErrors.forEach((error) => {
                 assert.ok(
                     error.shouldNotRetry(),
-                    `${error.getErrorType()} should not retry`,
+                    `${error.message} should not retry`,
                 );
             });
 
             canRetryErrors.forEach((error) => {
                 assert.ok(
                     !error.shouldNotRetry(),
-                    `${error.getErrorType()} can retry`,
+                    `${error.message} should allow retry`,
                 );
             });
         });
 
-        it('should provide human-readable error types', () => {
-            const testCases = [
-                [LSPErrorCodes.RequestCancelled, 'Request Cancelled'],
-                [LSPErrorCodes.ServerCancelled, 'Server Cancelled'],
-                [LSPErrorCodes.ContentModified, 'Content Modified'],
-                [ErrorCodes.ParseError, 'Parse Error'],
-                [ErrorCodes.InvalidRequest, 'Invalid Request'],
-                [ErrorCodes.MethodNotFound, 'Method Not Found'],
-                [ErrorCodes.InvalidParams, 'Invalid Parameters'],
-                [ErrorCodes.InternalError, 'Internal Error'],
-                [12345, 'LSP Error (12345)'],
-            ];
-
-            testCases.forEach(([code, expectedType]) => {
-                const error = new LSPError('Test', code as number);
-                assert.strictEqual(error.getErrorType(), expectedType);
-            });
-        });
-
-        it('should provide enhanced toString output', () => {
-            const error = new LSPError(
-                'Test error message',
+        it('should create LSPError from ResponseError', () => {
+            const responseError = new ResponseError(
                 ErrorCodes.MethodNotFound,
-                { key: 'value' },
-                'textDocument/hover',
+                'Method not found',
             );
-
-            const result = error.toString();
-            assert.ok(result.includes('LSPError: Test error message'));
-            assert.ok(result.includes('Code: -32601 (Method Not Found)'));
-            assert.ok(result.includes('Method: textDocument/hover'));
-            assert.ok(result.includes('Data: {"key":"value"}'));
-        });
-    });
-
-    describe('ResponseError Conversion', () => {
-        it('should convert ResponseError to LSPError', () => {
-            const responseError = new ResponseError(-32601, 'Method not found');
-            // Add data manually to simulate server response
             (responseError as any).data = { serverInfo: 'test' };
 
-            const lspError = convertResponseError(
+            const lspError = LSPError.fromResponseError(
                 responseError,
-                'textDocument/completion',
+                'textDocument/hover',
             );
 
             assert.ok(lspError instanceof LSPError);
             assert.strictEqual(lspError.code, ErrorCodes.MethodNotFound);
             assert.strictEqual(lspError.message, 'Method not found');
+            assert.strictEqual(lspError.method, 'textDocument/hover');
             assert.deepStrictEqual(lspError.data, { serverInfo: 'test' });
-            assert.strictEqual(lspError.method, 'textDocument/completion');
-        });
-
-        it('should handle ResponseError without data', () => {
-            const responseError = new ResponseError(
-                ErrorCodes.InternalError,
-                'Internal error',
-            );
-            const lspError = convertResponseError(responseError);
-
-            assert.ok(lspError instanceof LSPError);
-            assert.strictEqual(lspError.code, ErrorCodes.InternalError);
-            assert.strictEqual(lspError.message, 'Internal error');
-            assert.strictEqual(lspError.data, undefined);
-            assert.strictEqual(lspError.method, undefined);
         });
     });
 
-    describe('Error Normalization', () => {
+    describe('normalizeError Function', () => {
         it('should preserve LSPError unchanged', () => {
             const original = new LSPError(
                 'Test',
                 ErrorCodes.InternalError,
+                'test/method',
                 {},
-                'test',
             );
             const normalized = normalizeError(original);
 
@@ -183,7 +125,12 @@ describe('Unified Error Handling', () => {
         });
 
         it('should convert ResponseError to LSPError', () => {
-            const responseError = new ResponseError(-32601, 'Method not found');
+            const responseError = new ResponseError(
+                ErrorCodes.MethodNotFound,
+                'Method not found',
+            );
+            (responseError as any).data = { test: 'data' };
+
             const normalized = normalizeError(
                 responseError,
                 'textDocument/hover',
@@ -193,16 +140,20 @@ describe('Unified Error Handling', () => {
             assert.strictEqual(normalized.code, ErrorCodes.MethodNotFound);
             assert.strictEqual(normalized.message, 'Method not found');
             assert.strictEqual(normalized.method, 'textDocument/hover');
+            assert.deepStrictEqual(normalized.data, { test: 'data' });
         });
 
-        it('should preserve regular Error unchanged', () => {
-            const original = new Error('Regular error');
-            const normalized = normalizeError(original);
+        it('should convert regular Error to LSPError', () => {
+            const regularError = new Error('Regular error');
+            const normalized = normalizeError(regularError, 'test/method');
 
-            assert.strictEqual(normalized, original);
+            assert.ok(normalized instanceof LSPError);
+            assert.strictEqual(normalized.message, 'Regular error');
+            assert.strictEqual(normalized.code, ErrorCodes.InternalError);
+            assert.strictEqual(normalized.method, 'test/method');
         });
 
-        it('should convert unknown types to Error', () => {
+        it('should convert unknown types to LSPError', () => {
             const testCases = [
                 'string error',
                 { message: 'object error' },
@@ -213,376 +164,425 @@ describe('Unified Error Handling', () => {
 
             testCases.forEach((testCase) => {
                 const normalized = normalizeError(testCase);
-                assert.ok(normalized instanceof Error);
+                assert.ok(normalized instanceof LSPError);
                 assert.strictEqual(normalized.message, String(testCase));
+                assert.strictEqual(normalized.code, ErrorCodes.InternalError);
             });
         });
     });
 
-    describe('Type Guards', () => {
-        it('should correctly identify LSPError', () => {
-            const lspError = new LSPError('Test', -32603);
-            const regularError = new Error('Regular');
-            const responseError = new ResponseError(-32601, 'Method not found');
-
-            assert.ok(isLSPError(lspError));
-            assert.ok(!isLSPError(regularError));
-            assert.ok(!isLSPError(responseError));
-            assert.ok(!isLSPError('string'));
-            assert.ok(!isLSPError(null));
-        });
-
-        it('should correctly identify ResponseError', () => {
-            const lspError = new LSPError('Test', -32603);
-            const regularError = new Error('Regular');
-            const responseError = new ResponseError(-32601, 'Method not found');
-
-            assert.ok(!isResponseError(lspError));
-            assert.ok(!isResponseError(regularError));
-            assert.ok(isResponseError(responseError));
-            assert.ok(!isResponseError('string'));
-            assert.ok(!isResponseError(null));
-        });
-    });
-
-    describe('Utility Functions', () => {
-        it('should extract error messages safely', () => {
-            const testCases = [
-                [new Error('Error message'), 'Error message'],
-                [
-                    new LSPError('LSP message', ErrorCodes.InternalError),
-                    'LSP message',
-                ],
-                [
-                    new ResponseError(
-                        ErrorCodes.MethodNotFound,
-                        'Response message',
-                    ),
-                    'Response message',
-                ],
-                ['String error', 'String error'],
-                [123, '123'],
-                [null, 'null'],
-                [undefined, 'undefined'],
-            ];
-
-            testCases.forEach(([input, expected]) => {
-                assert.strictEqual(getErrorMessage(input), expected);
-            });
-        });
-
-        it('should extract error codes safely', () => {
-            const lspError = new LSPError('Test', ErrorCodes.InternalError);
-            const responseError = new ResponseError(
-                ErrorCodes.MethodNotFound,
-                'Test',
+    describe('Error Classification Functions', () => {
+        it('should identify cancellation errors', () => {
+            const cancelledError = new LSPError(
+                'Cancelled',
+                LSPErrorCodes.RequestCancelled,
             );
-            const regularError = new Error('Test');
-
-            assert.strictEqual(
-                getErrorCode(lspError),
+            const serverCancelledError = new LSPError(
+                'Server cancelled',
+                LSPErrorCodes.ServerCancelled,
+            );
+            const regularCancelError = new Error('Request was cancelled');
+            const otherError = new LSPError(
+                'Other error',
                 ErrorCodes.InternalError,
             );
-            assert.strictEqual(
-                getErrorCode(responseError),
-                ErrorCodes.MethodNotFound,
-            );
-            assert.strictEqual(getErrorCode(regularError), undefined);
-            assert.strictEqual(getErrorCode('string'), undefined);
+
+            assert.ok(isCancellationError(cancelledError));
+            assert.ok(isCancellationError(serverCancelledError));
+            assert.ok(isCancellationError(regularCancelError));
+            assert.ok(!isCancellationError(otherError));
         });
 
-        it('should identify cancellation errors from various sources', () => {
-            const testCases = [
-                [new LSPError('Test', LSPErrorCodes.RequestCancelled), true],
-                [new LSPError('Test', LSPErrorCodes.ServerCancelled), true],
-                [
-                    new ResponseError(LSPErrorCodes.RequestCancelled, 'Test'),
-                    true,
-                ],
-                [
-                    new ResponseError(LSPErrorCodes.ServerCancelled, 'Test'),
-                    true,
-                ],
-                [new Error('Request was cancelled'), true],
-                [new Error('Operation cancelled'), true],
-                [new Error('CANCEL detected'), true],
-                [new LSPError('Test', ErrorCodes.InternalError), false],
-                [new Error('Regular error'), false],
-                ['string error', false],
-            ];
-
-            testCases.forEach(([input, expected]) => {
-                assert.strictEqual(
-                    isCancellationError(input),
-                    expected,
-                    `Failed for: ${input}`,
-                );
-            });
-        });
-
-        it('should determine retry logic correctly', () => {
-            const shouldNotRetryList = [
-                new LSPError('Test', LSPErrorCodes.RequestCancelled),
-                new LSPError('Test', LSPErrorCodes.ServerCancelled),
-                new LSPError('Test', ErrorCodes.MethodNotFound),
-                new LSPError('Test', ErrorCodes.InvalidParams),
-                new ResponseError(LSPErrorCodes.RequestCancelled, 'Test'),
-                new ResponseError(ErrorCodes.MethodNotFound, 'Test'),
+        it('should determine retry logic for different error types', () => {
+            const shouldNotRetryErrors = [
+                new LSPError('Cancelled', LSPErrorCodes.RequestCancelled),
+                new LSPError('Server cancelled', LSPErrorCodes.ServerCancelled),
+                new LSPError('Method not found', ErrorCodes.MethodNotFound),
+                new LSPError('Invalid params', ErrorCodes.InvalidParams),
                 new Error('Request cancelled'),
             ];
 
-            const canRetryList = [
-                new LSPError('Test', ErrorCodes.InternalError),
-                new LSPError('Test', LSPErrorCodes.ContentModified),
-                new ResponseError(ErrorCodes.InternalError, 'Test'),
+            const canRetryErrors = [
+                new LSPError('Internal error', ErrorCodes.InternalError),
+                new LSPError('Content modified', LSPErrorCodes.ContentModified),
                 new Error('Network error'),
-                'string error',
             ];
 
-            shouldNotRetryList.forEach((error) => {
+            shouldNotRetryErrors.forEach((error) => {
                 assert.ok(
                     shouldNotRetryError(error),
-                    `Should not retry: ${error}`,
+                    `Should not retry: ${error.message}`,
                 );
             });
 
-            canRetryList.forEach((error) => {
-                assert.ok(!shouldNotRetryError(error), `Can retry: ${error}`);
+            canRetryErrors.forEach((error) => {
+                assert.ok(
+                    !shouldNotRetryError(error),
+                    `Should retry: ${error.message}`,
+                );
             });
         });
     });
 
-    describe('Error Formatting', () => {
-        it('should format LSPError for logging', () => {
-            const error = new LSPError(
-                'Test message',
-                ErrorCodes.MethodNotFound,
-                { info: 'test' },
-                'textDocument/completion',
+    describe('Utility Error Creation Functions', () => {
+        it('should create server not initialized error', () => {
+            const error = createServerNotInitializedError('testMethod');
+
+            assert.ok(error instanceof LSPError);
+            assert.strictEqual(error.message, 'Server not initialized');
+            assert.strictEqual(error.code, ErrorCodes.ServerNotInitialized);
+            assert.strictEqual(error.method, 'testMethod');
+        });
+
+        it('should create no connection error', () => {
+            const error = createNoConnectionError('testMethod');
+
+            assert.ok(error instanceof LSPError);
+            assert.strictEqual(error.message, 'No active connection');
+            assert.strictEqual(error.code, ErrorCodes.InternalError);
+            assert.strictEqual(error.method, 'testMethod');
+        });
+
+        it('should create cancelled error', () => {
+            const error = createCancelledError('Custom reason', 'testMethod');
+
+            assert.ok(error instanceof LSPError);
+            assert.strictEqual(error.message, 'Custom reason');
+            assert.strictEqual(error.code, LSPErrorCodes.RequestCancelled);
+            assert.strictEqual(error.method, 'testMethod');
+        });
+
+        it('should create timeout error', () => {
+            const error = createTimeoutError('Custom timeout', 'testMethod');
+
+            assert.ok(error instanceof LSPError);
+            assert.strictEqual(error.message, 'Custom timeout');
+            assert.strictEqual(error.code, ErrorCodes.InternalError);
+            assert.strictEqual(error.method, 'testMethod');
+        });
+
+        it('should create LSPError from regular Error', () => {
+            const originalError = new Error('Original message');
+            const lspError = createLSPErrorFromError(
+                originalError,
+                'testMethod',
             );
 
-            const formatted = formatErrorForLogging(error, 'TEST_CONTEXT');
-
-            assert.ok(formatted.includes('[TEST_CONTEXT]'));
-            assert.ok(formatted.includes('LSP Error: Test message'));
-            assert.ok(formatted.includes('Code: -32601'));
-            assert.ok(formatted.includes('Type: Method Not Found'));
-            assert.ok(formatted.includes('Method: textDocument/completion'));
+            assert.ok(lspError instanceof LSPError);
+            assert.strictEqual(lspError.message, 'Original message');
+            assert.strictEqual(lspError.code, ErrorCodes.InternalError);
+            assert.strictEqual(lspError.method, 'testMethod');
         });
 
-        it('should format ResponseError for logging', () => {
-            const error = new ResponseError(
-                ErrorCodes.InternalError,
-                'Internal error',
+        it('should create generic error', () => {
+            const error = createGenericError(
+                'Generic message',
+                'testMethod',
+                ErrorCodes.ParseError,
             );
-            const formatted = formatErrorForLogging(error, 'SERVER');
 
-            assert.ok(formatted.includes('[SERVER]'));
-            assert.ok(formatted.includes('ResponseError: Internal error'));
-            assert.ok(formatted.includes('Code: -32603'));
-        });
-
-        it('should format regular Error for logging', () => {
-            const error = new Error('Regular error');
-            const formatted = formatErrorForLogging(error);
-
-            assert.ok(formatted.includes('Error: Regular error'));
-            assert.ok(!formatted.includes('['));
-        });
-
-        it('should format unknown errors for logging', () => {
-            const formatted = formatErrorForLogging('Unknown error', 'DEBUG');
-
-            assert.ok(formatted.includes('[DEBUG]'));
-            assert.ok(formatted.includes('Unknown error: Unknown error'));
+            assert.ok(error instanceof LSPError);
+            assert.strictEqual(error.message, 'Generic message');
+            assert.strictEqual(error.code, ErrorCodes.ParseError);
+            assert.strictEqual(error.method, 'testMethod');
         });
     });
 
-    describe('LSPResult Integration', () => {
-        it('should work with LSPError in success case', () => {
-            const result = LSPResult.success('test data');
+    describe('Result Integration', () => {
+        it('should create successful Result', () => {
+            const result: Result<string, LSPError[]> = Ok('test data');
 
-            assert.ok(result.isSuccess());
-            assert.strictEqual(result.getValue(), 'test data');
+            assert.ok(result.isOk());
+            assert.strictEqual(result.unwrap(), 'test data');
+            assert.ok(!result.isErr());
         });
 
-        it('should work with LSPError in error case', () => {
+        it('should create error Result with single error', () => {
             const lspError = new LSPError(
                 'Test error',
                 ErrorCodes.InternalError,
-            );
-            const result = LSPResult.error(lspError);
-
-            let errorHandled = false;
-            result.handleResult({
-                success: () => {
-                    assert.fail('Should not be success');
-                },
-                error: (error) => {
-                    errorHandled = true;
-                    assert.strictEqual(error, lspError);
-                },
-                timeout: () => {
-                    assert.fail('Should not be timeout');
-                },
-                cancelled: () => {
-                    assert.fail('Should not be cancelled');
-                },
-                connectionReset: () => {
-                    assert.fail('Should not be connection reset');
-                },
-            });
-            assert.ok(errorHandled, 'Error handler should have been called');
-        });
-
-        it('should work with converted ResponseError', () => {
-            const responseError = new ResponseError(-32601, 'Method not found');
-            const normalizedError = normalizeError(
-                responseError,
                 'test/method',
             );
-            const result = LSPResult.error(normalizedError);
+            const result: Result<string, LSPError[]> = Err([lspError]);
 
-            let errorHandled = false;
-            result.handleResult({
-                success: () => {
-                    assert.fail('Should not be success');
-                },
-                error: (error) => {
-                    errorHandled = true;
-                    assert.ok(isLSPError(error));
-                    if (isLSPError(error)) {
-                        assert.strictEqual(
-                            error.code,
-                            ErrorCodes.MethodNotFound,
-                        );
-                        assert.strictEqual(error.method, 'test/method');
-                        assert.strictEqual(error.message, 'Method not found');
-                    }
-                },
-                timeout: () => {
-                    assert.fail('Should not be timeout');
-                },
-                cancelled: () => {
-                    assert.fail('Should not be cancelled');
-                },
-                connectionReset: () => {
-                    assert.fail('Should not be connection reset');
-                },
-            });
-            assert.ok(errorHandled, 'Error handler should have been called');
+            assert.ok(result.isErr());
+            assert.ok(!result.isOk());
+            const errors = result.unwrapErr();
+            assert.strictEqual(errors.length, 1);
+            assert.strictEqual(errors[0], lspError);
+
+            assert.throws(() => result.unwrap(), /Tried to unwrap Error/);
         });
 
-        it('should handle cancellation errors correctly', () => {
-            const cancelledError = new LSPError(
-                'Request cancelled',
-                LSPErrorCodes.RequestCancelled,
-            );
-            const result = LSPResult.error(cancelledError);
+        it('should create error LSPResult with multiple errors', () => {
+            const errors = [
+                new LSPError('First error', ErrorCodes.InternalError),
+                new Error('Second error'),
+                new LSPError('Third error', ErrorCodes.ParseError),
+            ];
+            const result = LSPResult.error(errors);
 
-            // The consumer can now check the error type
-            const error = result.getError();
-            assert.ok(isLSPError(error));
-            if (isLSPError(error)) {
-                assert.ok(error.isCancellation());
+            assert.ok(!result.isSuccess());
+            assert.strictEqual(result.getErrorCount(), 3);
+            assert.strictEqual(result.getFirstError(), errors[0]);
+            assert.ok(result.hasLSPError());
+            assert.strictEqual(result.getFirstLSPError(), errors[0]);
+
+            const retrievedErrors = result.getErrors();
+            assert.strictEqual(retrievedErrors.length, 3);
+            assert.notStrictEqual(retrievedErrors, errors); // Should be a copy
+        });
+
+        it('should handle result with callbacks', () => {
+            const successResult = LSPResult.success('success data');
+            const errorResult = LSPResult.singleError(
+                new LSPError('Error', ErrorCodes.InternalError),
+            );
+
+            const successValue = successResult.handle(
+                (value) => `Processed: ${value}`,
+                (errors) => `Error count: ${errors.length}`,
+            );
+
+            const errorValue = errorResult.handle(
+                (value) => `Processed: ${value}`,
+                (errors) => `Error count: ${errors.length}`,
+            );
+
+            assert.strictEqual(successValue, 'Processed: success data');
+            assert.strictEqual(errorValue, 'Error count: 1');
+        });
+
+        it('should map successful values', () => {
+            const result: Result<number, LSPError[]> = Ok(5);
+            const mapped = result.map((value) => value * 2);
+
+            assert.ok(mapped.isOk());
+            assert.strictEqual(mapped.unwrap(), 10);
+        });
+
+        it('should not map error values', () => {
+            const error = new LSPError(
+                'Test',
+                ErrorCodes.InternalError,
+                'test',
+            );
+            const result: Result<number, LSPError[]> = Err([error]);
+            const mapped = result.map((value: number) => value * 2);
+
+            assert.ok(mapped.isErr());
+            assert.strictEqual(mapped.unwrapErr()[0], error);
+        });
+
+        it('should chain operations with andThen', () => {
+            const result: Result<number, LSPError[]> = Ok(5);
+            const chained = result.andThen((x) =>
+                x > 0
+                    ? Ok(x * 2)
+                    : Err([
+                          new LSPError(
+                              'Negative number',
+                              ErrorCodes.InvalidParams,
+                              'test',
+                          ),
+                      ]),
+            );
+
+            assert.ok(chained.isOk());
+            assert.strictEqual(chained.unwrap(), 10);
+        });
+
+        it('should provide default values', () => {
+            const successResult: Result<string, LSPError[]> = Ok('success');
+            const errorResult: Result<string, LSPError[]> = Err([
+                new LSPError('Error', ErrorCodes.InternalError, 'test'),
+            ]);
+
+            assert.strictEqual(successResult.unwrapOr('default'), 'success');
+            assert.strictEqual(errorResult.unwrapOr('default'), 'default');
+        });
+
+        it('should handle Result conversion patterns', async () => {
+            const successResult: Result<string, LSPError[]> = Ok('success');
+            const errorResult: Result<string, LSPError[]> = Err([
+                new LSPError('Error', ErrorCodes.InternalError, 'test'),
+            ]);
+
+            // Success case
+            if (successResult.isOk()) {
+                const value = successResult.unwrap();
+                assert.strictEqual(value, 'success');
+            } else {
+                assert.fail('Should be Ok');
+            }
+
+            // Error case
+            if (errorResult.isErr()) {
+                const errors = errorResult.unwrapErr();
+                assert.ok(errors.length > 0);
+                assert.ok(errors[0] instanceof LSPError);
+            } else {
+                assert.fail('Should be Err');
             }
         });
 
-        it('should provide unified error handling in match pattern', () => {
-            const lspError = new LSPError(
-                'Test error',
-                ErrorCodes.InternalError,
-                {},
-                'test/method',
-            );
-            const result = LSPResult.error(lspError);
+        it('should handle Result pattern matching', () => {
+            const successResult: Result<string, LSPError[]> = Ok('test');
+            const errorResult: Result<string, LSPError[]> = Err([
+                new LSPError('Test error', ErrorCodes.InternalError, 'test'),
+            ]);
 
-            let capturedError: Error | undefined;
-            result.handleResult({
-                success: () => assert.fail('Should not be success'),
-                error: (error) => {
-                    capturedError = error;
-                    // All errors are now Error instances
-                    assert.ok(error instanceof Error);
-                    // But we can still check if it's an LSPError
-                    if (isLSPError(error)) {
-                        assert.strictEqual(
-                            error.code,
-                            ErrorCodes.InternalError,
-                        );
-                        assert.strictEqual(error.method, 'test/method');
-                    }
-                },
-            });
+            let successCalled = false;
+            let errorCalled = false;
 
-            assert.ok(capturedError);
-            assert.strictEqual(capturedError, lspError);
+            // Handle success case
+            if (successResult.isOk()) {
+                successCalled = true;
+                const value = successResult.unwrap();
+                assert.strictEqual(value, 'test');
+            } else {
+                assert.fail('Should not be error');
+            }
+
+            // Handle error case
+            if (errorResult.isErr()) {
+                errorCalled = true;
+                const errors = errorResult.unwrapErr();
+                assert.strictEqual(errors.length, 1);
+                assert.ok(errors[0] instanceof LSPError);
+            } else {
+                assert.fail('Should not be success');
+            }
+
+            assert.ok(successCalled);
+            assert.ok(errorCalled);
+        });
+
+        it('should determine result state', () => {
+            const successResult: Result<string, LSPError[]> = Ok('test');
+            const cancelledResult: Result<string, LSPError[]> = Err([
+                new LSPError(
+                    'Cancelled',
+                    LSPErrorCodes.RequestCancelled,
+                    'test',
+                ),
+            ]);
+            const errorResult: Result<string, LSPError[]> = Err([
+                new LSPError('Error', ErrorCodes.InternalError, 'test'),
+            ]);
+
+            // Check success state
+            assert.ok(successResult.isOk());
+            assert.ok(!successResult.isErr());
+
+            // Check cancelled state by examining error code
+            assert.ok(cancelledResult.isErr());
+            const cancelledErrors = cancelledResult.unwrapErr();
+            assert.ok(isCancellationError(cancelledErrors[0]));
+
+            // Check error state
+            assert.ok(errorResult.isErr());
+            const errors = errorResult.unwrapErr();
+            assert.ok(!isCancellationError(errors[0]));
+        });
+
+        it('should handle error logging patterns', () => {
+            const originalConsoleError = console.error;
+            const logs: string[] = [];
+            console.error = (...args: any[]) => {
+                logs.push(args.join(' '));
+            };
+
+            try {
+                const result: Result<string, LSPError[]> = Err([
+                    new LSPError(
+                        'First error',
+                        ErrorCodes.InternalError,
+                        'test/method',
+                    ),
+                    new LSPError(
+                        'Second error',
+                        ErrorCodes.InternalError,
+                        'test/method',
+                    ),
+                ]);
+
+                // Custom logging pattern for Result
+                if (result.isErr()) {
+                    const errors = result.unwrapErr();
+                    console.error(
+                        'TEST_CONTEXT:',
+                        errors.map((e) => e.message).join(', '),
+                    );
+                }
+
+                assert.ok(logs.length > 0);
+                assert.ok(logs[0].includes('TEST_CONTEXT:'));
+                assert.ok(logs[0].includes('First error'));
+            } finally {
+                console.error = originalConsoleError;
+            }
         });
     });
 
-    describe('Migration Benefits', () => {
-        it('should demonstrate simplified error handling', () => {
-            // Before: Had to check instanceof ResponseError vs Error
-            // After: All errors are Error, but can check isLSPError for LSP-specific handling
-
+    describe('Real-world Integration Scenarios', () => {
+        it('should handle complete request failure scenario', () => {
             const errors = [
-                new LSPError('LSP error', ErrorCodes.InternalError),
-                new Error('JavaScript error'),
-                normalizeError(
-                    new ResponseError(
-                        ErrorCodes.MethodNotFound,
-                        'Method not found',
-                    ),
+                new ResponseError(
+                    ErrorCodes.InternalError,
+                    'Server overloaded',
                 ),
+                new Error('Connection timeout'),
+                new Error('Network unreachable'),
             ];
 
-            errors.forEach((error) => {
-                // Unified handling - all are Error instances
-                assert.ok(error instanceof Error);
+            // Convert to LSPErrors
+            const lspErrors = errors.map((error) =>
+                normalizeError(error, 'textDocument/completion'),
+            );
+            const result: Result<any, LSPError[]> = Err(lspErrors);
 
-                // Can get message uniformly
-                const message = error.message;
-                assert.ok(typeof message === 'string');
+            assert.ok(result.isErr());
+            const resultErrors = result.unwrapErr();
+            assert.strictEqual(resultErrors.length, 3);
+            assert.ok(resultErrors.every((error) => error instanceof LSPError));
 
-                // Can check for LSP-specific features if needed
-                if (isLSPError(error)) {
-                    // Has LSP-specific properties and methods
-                    assert.ok(typeof error.code === 'number');
-                    assert.ok(typeof error.getErrorType === 'function');
-                }
-            });
+            const firstError = resultErrors[0];
+            assert.ok(firstError);
+            assert.strictEqual(firstError.code, ErrorCodes.InternalError);
+            assert.strictEqual(firstError.method, 'textDocument/completion');
         });
 
-        it('should preserve LSP error information', () => {
-            const originalResponseError = new ResponseError(
+        it('should handle method not found error', () => {
+            const responseError = new ResponseError(
                 ErrorCodes.MethodNotFound,
-                'Method not found',
+                'textDocument/semanticTokens not supported',
             );
-            // Add data manually to simulate server response
-            (originalResponseError as any).data = { serverVersion: '1.0.0' };
-
-            const convertedError = normalizeError(
-                originalResponseError,
-                'textDocument/hover',
+            const lspError = normalizeError(
+                responseError,
+                'textDocument/semanticTokens',
             );
+            const result: Result<any, LSPError[]> = Err([lspError]);
 
-            // All LSP information is preserved
-            assert.ok(isLSPError(convertedError));
-            if (isLSPError(convertedError)) {
-                assert.strictEqual(
-                    convertedError.code,
-                    ErrorCodes.MethodNotFound,
-                );
-                assert.strictEqual(convertedError.message, 'Method not found');
-                assert.deepStrictEqual(convertedError.data, {
-                    serverVersion: '1.0.0',
-                });
-                assert.strictEqual(convertedError.method, 'textDocument/hover');
-                assert.strictEqual(
-                    convertedError.getErrorType(),
-                    'Method Not Found',
-                );
-            }
+            assert.ok(result.isErr());
+            assert.ok(shouldNotRetryError(lspError)); // Should not retry unsupported methods
+            assert.strictEqual(
+                result.unwrapErr()[0].message,
+                'textDocument/semanticTokens not supported',
+            );
+        });
+
+        it('should handle cancellation scenarios', () => {
+            const cancelledError = new LSPError(
+                'Request was cancelled by user',
+                LSPErrorCodes.RequestCancelled,
+                'textDocument/completion',
+            );
+            const result: Result<any, LSPError[]> = Err([cancelledError]);
+
+            assert.ok(result.isErr());
+            const errors = result.unwrapErr();
+            assert.ok(isCancellationError(errors[0]));
         });
     });
 });

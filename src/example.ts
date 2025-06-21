@@ -96,28 +96,19 @@ async function basicLSPSetup(): Promise<LanguageServer | null> {
 
     // Use pattern matching for comprehensive error handling
     let server: LanguageServer | null = null;
-    serverResult.handleResult({
-        success: (s) => {
-            console.log('✅ LSP server initialized successfully!');
-            console.log('Server capabilities:', s.getCapabilities());
-            server = s;
-        },
-        timeout: () => {
-            console.error('❌ LSP server initialization timed out');
-        },
-        error: (error) => {
-            console.error(
-                '❌ LSP server initialization failed:',
-                error.message,
-            );
-        },
-        cancelled: () => {
-            console.log('⚠️ LSP server initialization was cancelled');
-        },
-        connectionReset: () => {
-            console.error('💔 Connection lost during initialization');
-        },
-    });
+    const result = await serverResult.promise;
+    if (result.isOk()) {
+        const s = result.unwrap();
+        console.log('✅ LSP server initialized successfully!');
+        console.log('Server capabilities:', s.getCapabilities());
+        server = s;
+    } else {
+        const errors = result.unwrapErr();
+        console.error(
+            '❌ LSP server initialization failed:',
+            errors.map((e) => e.message).join(', '),
+        );
+    }
     return server;
 }
 
@@ -200,17 +191,13 @@ async function makeLSPRequests(server: LanguageServer, documentUri: string) {
         {
             timeout: 5000, // Custom timeout for this request
         },
-    );
+    ).promise;
 
-    await completionResult.handleResult({
-        success: async (
-            completion: CompletionList | CompletionItem[] | null,
-        ) => {
-            if (!completion) {
-                console.log('No completion items available');
-                return;
-            }
-
+    if (completionResult.isOk()) {
+        const completion = completionResult.unwrap();
+        if (!completion) {
+            console.log('No completion items available');
+        } else {
             const items = Array.isArray(completion)
                 ? completion
                 : completion.items;
@@ -221,123 +208,100 @@ async function makeLSPRequests(server: LanguageServer, documentUri: string) {
                     `  - ${item.label} (${item.kind ? `kind: ${item.kind}` : 'no kind'})`,
                 );
             });
-        },
-        timeout: async () => {
-            console.warn('⏰ Completion request timed out');
-        },
-        error: async (error: any) => {
-            console.error('❌ Completion request failed:', error.message);
-        },
-        cancelled: async () => {
-            console.log('🚫 Completion request was cancelled');
-        },
-        connectionReset: async () => {
-            console.error('💔 Connection lost during completion request');
-        },
-    });
+        }
+    } else {
+        const errors = completionResult.unwrapErr();
+        console.error(
+            '❌ Completion request failed:',
+            errors.map((e) => e.message).join(', '),
+        );
+    }
 
     // 2. Send hover request
     const hoverResult = await server.hover({
         textDocument: { uri: documentUri },
         position: { line: 5, character: 10 },
-    });
+    }).promise;
 
-    await hoverResult.handleResult({
-        success: async (hover: Hover | null) => {
-            if (hover && hover.contents) {
-                console.log('💡 Hover information available');
-                if (typeof hover.contents === 'string') {
-                    console.log(`  Content: ${hover.contents}`);
-                } else if (Array.isArray(hover.contents)) {
-                    hover.contents.forEach((content, i) => {
-                        console.log(
-                            `  Content ${i + 1}: ${typeof content === 'string' ? content : content.value}`,
-                        );
-                    });
-                } else {
-                    console.log(`  Content: ${hover.contents.value}`);
-                }
+    if (hoverResult.isOk()) {
+        const hover = hoverResult.unwrap();
+        if (hover && hover.contents) {
+            console.log('💡 Hover information available');
+            if (typeof hover.contents === 'string') {
+                console.log(`  Content: ${hover.contents}`);
+            } else if (Array.isArray(hover.contents)) {
+                hover.contents.forEach((content, i) => {
+                    console.log(
+                        `  Content ${i + 1}: ${typeof content === 'string' ? content : content.value}`,
+                    );
+                });
             } else {
-                console.log('No hover information available');
+                console.log(`  Content: ${hover.contents.value}`);
             }
-        },
-        error: async (error: any) => {
-            console.error('❌ Hover request failed:', error.message);
-        },
-        timeout: async () => {
-            console.warn('⏰ Hover request timed out');
-        },
-        cancelled: async () => {
-            console.log('🚫 Hover request was cancelled');
-        },
-        connectionReset: async () => {
-            console.error('💔 Connection lost during hover request');
-        },
-    });
+        } else {
+            console.log('No hover information available');
+        }
+    } else {
+        const errors = hoverResult.unwrapErr();
+        console.error(
+            '❌ Hover request failed:',
+            errors.map((e) => e.message).join(', '),
+        );
+    }
 
     // 3. Send definition request
     const definitionResult = await server.definition({
         textDocument: { uri: documentUri },
         position: { line: 15, character: 8 },
-    });
+    }).promise;
 
-    await definitionResult.handleResult({
-        success: async (definition: any) => {
-            if (definition) {
-                if (Array.isArray(definition)) {
-                    console.log(`🎯 Found ${definition.length} definition(s)`);
-                    definition.forEach((loc, i) => {
-                        // Type guard to distinguish Location from LocationLink
-                        if ('targetUri' in loc && 'targetRange' in loc) {
-                            // LocationLink
-                            const link = loc as unknown as LocationLink;
-                            console.log(
-                                `  ${i + 1}. ${link.targetUri} (line ${link.targetRange.start.line})`,
-                            );
-                        } else {
-                            // Location
-                            const location = loc as Location;
-                            console.log(
-                                `  ${i + 1}. ${location.uri} (line ${location.range.start.line})`,
-                            );
-                        }
-                    });
-                } else {
+    if (definitionResult.isOk()) {
+        const definition = definitionResult.unwrap();
+        if (definition) {
+            if (Array.isArray(definition)) {
+                console.log(`🎯 Found ${definition.length} definition(s)`);
+                definition.forEach((loc, i) => {
                     // Type guard to distinguish Location from LocationLink
-                    if (
-                        'targetUri' in definition &&
-                        'targetRange' in definition
-                    ) {
+                    if ('targetUri' in loc && 'targetRange' in loc) {
                         // LocationLink
-                        const link = definition as unknown as LocationLink;
+                        const link = loc as unknown as LocationLink;
                         console.log(
-                            `🎯 Found definition at ${link.targetUri} (line ${link.targetRange.start.line})`,
+                            `  ${i + 1}. ${link.targetUri} (line ${link.targetRange.start.line})`,
                         );
                     } else {
                         // Location
-                        const location = definition as Location;
+                        const location = loc as Location;
                         console.log(
-                            `🎯 Found definition at ${location.uri} (line ${location.range.start.line})`,
+                            `  ${i + 1}. ${location.uri} (line ${location.range.start.line})`,
                         );
                     }
-                }
+                });
             } else {
-                console.log('No definition found');
+                // Type guard to distinguish Location from LocationLink
+                if ('targetUri' in definition && 'targetRange' in definition) {
+                    // LocationLink
+                    const link = definition as unknown as LocationLink;
+                    console.log(
+                        `🎯 Found definition at ${link.targetUri} (line ${link.targetRange.start.line})`,
+                    );
+                } else {
+                    // Location
+                    const location = definition as Location;
+                    console.log(
+                        `🎯 Found definition at ${location.uri} (line ${location.range.start.line})`,
+                    );
+                }
             }
-        },
-        error: async (error: any) => {
-            console.error('❌ Definition request failed:', error.message);
-        },
-        timeout: async () => {
-            console.warn('⏰ Definition request timed out');
-        },
-        cancelled: async () => {
-            console.log('🚫 Definition request was cancelled');
-        },
-        connectionReset: async () => {
-            console.error('💔 Connection lost during definition request');
-        },
-    });
+        } else {
+            console.log('No definition found');
+        }
+    } else {
+        const errors = definitionResult.unwrapErr();
+        console.error(
+            '❌ Definition request failed:',
+            errors.map((e) => e.message).join(', '),
+        );
+    }
 }
 
 /**
@@ -502,16 +466,16 @@ async function setupCompleteApplication() {
         });
 
         // Shutdown server
-        const shutdownResult = await server.shutdown();
-        shutdownResult.handleResult({
-            success: () => console.log('✅ Server shutdown successfully'),
-            error: (error: any) =>
-                console.error('❌ Server shutdown failed:', error.message),
-            timeout: () => console.warn('⏰ Server shutdown timed out'),
-            cancelled: () => console.log('🚫 Server shutdown was cancelled'),
-            connectionReset: () =>
-                console.warn('🔌 Connection reset during shutdown'),
-        });
+        const shutdownResult = await server.shutdown().promise;
+        if (shutdownResult.isOk()) {
+            console.log('✅ Server shutdown successfully');
+        } else {
+            const errors = shutdownResult.unwrapErr();
+            console.error(
+                '❌ Server shutdown failed:',
+                errors.map((e: any) => e.message).join(', '),
+            );
+        }
 
         // Dispose server (releases all resources)
         server.dispose();
@@ -536,23 +500,16 @@ async function modernJavaScriptExample() {
         );
 
         let server: LanguageServer | null = null;
-        serverResult.handleResult({
-            success: (s) => {
-                server = s;
-            },
-            error: () => {
-                throw new Error('Failed to initialize server');
-            },
-            timeout: () => {
-                throw new Error('Server initialization timed out');
-            },
-            cancelled: () => {
-                throw new Error('Server initialization cancelled');
-            },
-            connectionReset: () => {
-                throw new Error('Connection lost');
-            },
-        });
+        const result = await serverResult.promise;
+        if (result.isOk()) {
+            server = result.unwrap();
+        } else {
+            const errors = result.unwrapErr();
+            throw new Error(
+                'Failed to initialize server: ' +
+                    errors.map((e) => e.message).join(', '),
+            );
+        }
 
         if (!server) {
             throw new Error('Failed to get server instance');
@@ -568,18 +525,20 @@ async function modernJavaScriptExample() {
         });
 
         // Make requests
-        const completion = await serverInstance.completion({
-            textDocument: { uri: 'file:///test.ts' },
+        const completion = await server.completion({
+            textDocument: { uri: 'file:///test.py' },
             position: { line: 0, character: 0 },
-        });
+        }).promise;
 
-        completion.handleResult({
-            success: (items: any) => console.log('Completion successful'),
-            error: (error: any) => console.error('Completion failed:', error),
-            timeout: () => console.warn('Completion timed out'),
-            cancelled: () => console.log('Completion cancelled'),
-            connectionReset: () => console.error('Connection lost'),
-        });
+        if (completion.isOk()) {
+            console.log('Completion successful');
+        } else {
+            const errors = completion.unwrapErr();
+            console.error(
+                'Completion failed:',
+                errors.map((e: any) => e.message).join(', '),
+            );
+        }
 
         // Both server and diagnostics subscription will be automatically disposed
         // when exiting this try block (RAII-style cleanup)

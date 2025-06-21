@@ -13,17 +13,8 @@
  */
 
 // === Import ErrorConverter utilities ===
-import {
-    LSPError,
-    convertResponseError,
-    normalizeError,
-    isLSPError,
-    isCancellationError,
-    shouldNotRetryError,
-    getErrorMessage,
-    getErrorCode,
-    formatErrorForLogging,
-} from './types/ErrorConverter.js';
+import { LSPError } from './types/ErrorConverter.js';
+import { ErrorCodes } from 'vscode-languageserver-protocol';
 
 // === Core Classes ===
 export { LanguageServer } from './core/LanguageServer.js';
@@ -41,7 +32,7 @@ export * from './types/index.js';
 // === Internal imports for factory functions ===
 import { LanguageServer } from './core/LanguageServer.js';
 import { ConnectionManager } from './core/ConnectionManager.js';
-import { LSPResult } from './types/LSPResult.js';
+import { Result, Ok, Err, AsyncResult } from 'ts-results-es';
 import { createSubscription } from './types/Subscription.js';
 import { SubscriptionTracker } from './types/Subscription.js';
 
@@ -103,20 +94,11 @@ export {
     DiagnosticSeverity,
     CompletionItemKind,
     SymbolKind,
+    ErrorCodes,
 } from 'vscode-languageserver-protocol';
 
 // === Error Handling Utilities ===
-export {
-    LSPError,
-    convertResponseError,
-    normalizeError,
-    isLSPError,
-    isCancellationError,
-    shouldNotRetryError,
-    getErrorMessage,
-    getErrorCode,
-    formatErrorForLogging,
-};
+export { LSPError };
 
 // === Convenience Factory Functions ===
 
@@ -133,14 +115,15 @@ export async function createLanguageServer(
 /**
  * Create and initialize a LanguageServer instance
  */
-export async function createAndInitializeLanguageServer(
+export function createAndInitializeLanguageServer(
     serverUri: string,
     options: import('./types').LanguageServerOptions,
     initParams?: Partial<
         import('vscode-languageserver-protocol').InitializeParams
     >,
-): Promise<
-    import('./types').LSPResult<import('./core/LanguageServer').LanguageServer>
+): AsyncResult<
+    import('./core/LanguageServer').LanguageServer,
+    import('./types').LSPError[]
 > {
     return LanguageServer.createAndInitialize(serverUri, options, initParams);
 }
@@ -157,26 +140,34 @@ export async function createConnectionManager(
 // === Utility Functions ===
 
 /**
- * Check if a value is an LSPResult
+ * Check if a value is a Result
  */
-export function isLSPResult<T>(
-    value: unknown,
-): value is import('./types').LSPResult<T> {
-    return value instanceof Object && 'match' in value && 'isSuccess' in value;
+export function isResult<T, E>(value: unknown): value is Result<T, E> {
+    return value instanceof Object && 'isOk' in value && 'isErr' in value;
 }
 
 /**
- * Wrap a Promise to return an LSPResult
+ * Wrap a Promise to return AsyncResult
  */
-export function wrapPromiseAsLSPResult<T>(
+export function wrapPromiseAsAsyncResult<T>(
     promise: Promise<T>,
-): Promise<import('./types').LSPResult<T>> {
-    return promise
-        .then((result) => LSPResult.success(result))
+): AsyncResult<T, import('./types').LSPError[]> {
+    const resultPromise = promise
+        .then((result) => Ok(result))
         .catch((error) => {
-            const normalizedError = normalizeError(error);
-            return LSPResult.error(normalizedError);
+            const lspError =
+                error instanceof LSPError
+                    ? error
+                    : new LSPError(
+                          error instanceof Error
+                              ? error.message
+                              : String(error),
+                          ErrorCodes.InternalError,
+                          'wrapPromiseAsAsyncResult',
+                      );
+            return Err([lspError]);
         });
+    return new AsyncResult(resultPromise);
 }
 
 /**
@@ -208,34 +199,22 @@ export function createManagedSubscription(
  *     }
  *   );
  *
- *   return serverResult.handleResult({
- *     success: (server) => {
- *       console.log('LSP server ready!');
+ *   const result = await serverResult.promise;
+ *   if (result.isOk()) {
+ *     const server = result.unwrap();
+ *     console.log('LSP server ready!');
  *
- *       // Subscribe to diagnostics
- *       using diagnosticsSubscription = server.onDiagnostics((params) => {
- *         console.log('Diagnostics:', params.diagnostics);
- *       });
+ *     // Subscribe to diagnostics
+ *     using diagnosticsSubscription = server.onDiagnostics((params) => {
+ *       console.log('Diagnostics:', params.diagnostics);
+ *     });
  *
- *       return server;
- *     },
- *     timeout: () => {
- *       console.error('LSP server initialization timed out');
- *       return null;
- *     },
- *     error: (error) => {
- *       console.error('LSP server initialization failed:', error);
- *       return null;
- *     },
- *     cancelled: () => {
- *       console.log('LSP server initialization was cancelled');
- *       return null;
- *     },
- *     connectionReset: () => {
- *       console.error('Connection lost during initialization');
- *       return null;
- *     }
- *   });
+ *     return server;
+ *   } else {
+ *     const errors = result.unwrapErr();
+ *     console.error('LSP server initialization failed:', errors);
+ *     return null;
+ *   }
  * }
  *
  * // Usage with CodeMirror
@@ -247,21 +226,19 @@ export function createManagedSubscription(
  *   const completionResult = await server.completion({
  *     textDocument: { uri: 'file:///workspace/test.ts' },
  *     position: { line: 10, character: 5 }
- *   });
+ *   }).promise;
  *
- *   completionResult.handleResult({
- *     success: (completion) => {
- *       if (Array.isArray(completion)) {
- *         completion.forEach(item => console.log(item.label));
- *       } else if (completion) {
- *         completion.items.forEach(item => console.log(item.label));
- *       }
- *     },
- *     error: (error) => console.error('Completion failed:', error),
- *     timeout: () => console.warn('Completion timed out'),
- *     cancelled: () => console.log('Completion was cancelled'),
- *     connectionReset: () => console.error('Connection lost during completion')
- *   });
+ *   if (completionResult.isOk()) {
+ *     const completion = completionResult.unwrap();
+ *     if (Array.isArray(completion)) {
+ *       completion.forEach(item => console.log(item.label));
+ *     } else if (completion) {
+ *       completion.items.forEach(item => console.log(item.label));
+ *     }
+ *   } else {
+ *     const errors = completionResult.unwrapErr();
+ *     console.error('Completion failed:', errors);
+ *   }
  * }
  * ```
  */

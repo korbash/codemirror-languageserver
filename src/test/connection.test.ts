@@ -46,14 +46,14 @@ describe('Connection Management Tests', () => {
             } catch (error) {
                 if (
                     error instanceof Error &&
-                    error.message.includes('ECONNREFUSED')
+                    (error.message || 'Unknown error').includes('ECONNREFUSED')
                 ) {
                     console.warn(
                         '⚠️  Test server not available, skipping test',
                     );
                     return;
                 }
-                throw error;
+                throw new Error(errors[0]?.message || "Unknown error");
             }
         });
 
@@ -84,13 +84,16 @@ describe('Connection Management Tests', () => {
                     console.warn('⚠️  Server initialization timed out');
                     testPassed = true; // Не фейлим, это проблема окружения
                 },
-                error: async (error: Error) => {
-                    if (error.message.includes('ECONNREFUSED')) {
+                error: async (errors: Error[]) => {
+                    if (
+                        errors[0]?.message ||
+                        'Unknown error'.includes('ECONNREFUSED')
+                    ) {
                         console.warn('⚠️  Test server not available');
                         testPassed = true;
                         return;
                     }
-                    throw error;
+                    throw new Error(errors[0]?.message || "Unknown error");
                 },
                 cancelled: async () => {
                     console.warn('⚠️  Initialization cancelled');
@@ -125,9 +128,12 @@ describe('Connection Management Tests', () => {
                 timeout: async () => {
                     errorHandled = true;
                 },
-                error: async (error: Error) => {
+                error: async (errors: Error[]) => {
                     errorHandled = true;
-                    assert.ok(error instanceof Error, 'Should receive Error');
+                    assert.ok(
+                        errors[0] instanceof Error,
+                        'Should receive Error',
+                    );
                 },
                 cancelled: async () => {
                     errorHandled = true;
@@ -229,14 +235,17 @@ describe('Connection Management Tests', () => {
                 timeout: async () => {
                     console.warn('⚠️  Timeout during dispose test');
                 },
-                error: async (error: Error) => {
-                    if (error.message.includes('ECONNREFUSED')) {
+                error: async (errors: Error[]) => {
+                    if (
+                        errors[0]?.message ||
+                        'Unknown error'.includes('ECONNREFUSED')
+                    ) {
                         console.warn(
                             '⚠️  Server not available for dispose test',
                         );
                         return;
                     }
-                    throw error;
+                    throw new Error(errors[0]?.message || "Unknown error");
                 },
                 cancelled: async () => {
                     console.warn('⚠️  Cancelled during dispose test');
@@ -271,14 +280,17 @@ describe('Connection Management Tests', () => {
                         timeout: async () => {
                             console.warn('⚠️  Timeout in concurrent test');
                         },
-                        error: async (error: Error) => {
-                            if (error.message.includes('ECONNREFUSED')) {
+                        error: async (errors: Error[]) => {
+                            if (
+                                errors[0]?.message ||
+                                'Unknown error'.includes('ECONNREFUSED')
+                            ) {
                                 console.warn(
                                     '⚠️  Server not available for concurrent test',
                                 );
                                 return;
                             }
-                            throw error;
+                            throw new Error(errors[0]?.message || "Unknown error");
                         },
                         cancelled: async () => {
                             console.warn('⚠️  Cancelled in concurrent test');
@@ -353,14 +365,20 @@ describe('Connection Management Tests', () => {
                 timeout: async () => {
                     console.warn('⚠️  Timeout during disconnection test');
                 },
-                error: async (error: Error) => {
-                    if (error.message.includes('ECONNREFUSED')) {
+                error: async (errors: Error[]) => {
+                    if (
+                        errors[0]?.message ||
+                        'Unknown error'.includes('ECONNREFUSED')
+                    ) {
                         console.warn(
                             '⚠️  Server not available for disconnection test',
                         );
                         return;
                     }
-                    console.warn('Error in disconnection test:', error.message);
+                    console.warn(
+                        'Error in disconnection test:',
+                        errors[0]?.message || 'Unknown error',
+                    );
                 },
                 cancelled: async () => {
                     console.warn('⚠️  Cancelled during disconnection test');
@@ -400,7 +418,7 @@ describe('Connection Management Tests', () => {
                         timeout: async () => {
                             errorOccurred = true;
                         },
-                        error: async (error: Error) => {
+                        error: async (errors: Error[]) => {
                             errorOccurred = true;
                             assert.ok(
                                 error instanceof Error,

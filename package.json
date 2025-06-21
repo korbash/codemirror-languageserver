@@ -66,5 +66,10 @@
     "prettier": {
         "tabWidth": 4,
         "singleQuote": true
+    },
+    "dependencies": {
+        "ts-custom-error": "^3.3.1",
+        "ts-results-es": "^5.0.1",
+        "tslib": "^2.8.1"
     }
 }

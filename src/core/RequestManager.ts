@@ -3,11 +3,10 @@
  */
 
 import { Connection } from 'vscode-languageserver';
-import { LSPResult, LSPMethodValue, RequestOptions } from '../types/index.js';
-import {
-    normalizeError,
-    shouldNotRetryError,
-} from '../types/ErrorConverter.js';
+import { ErrorCodes } from 'vscode-languageserver-protocol';
+import { Result, Ok, Err, AsyncResult } from 'ts-results-es';
+import { LSPMethodValue, RequestOptions } from '../types/index.js';
+import { LSPError } from '../types/ErrorConverter.js';
 
 interface PendingRequest {
     id: string;
@@ -46,11 +45,11 @@ export class RequestManager {
     /**
      * Send LSP request with simplified options
      */
-    async sendRequest<P, R>(
+    sendRequest<P, R>(
         method: LSPMethodValue,
         params: P,
         options: RequestOptions = {},
-    ): Promise<LSPResult<R>> {
+    ): AsyncResult<R, LSPError[]> {
         const requestOptions = { ...DEFAULT_REQUEST_OPTIONS, ...options };
         const requestId = this.generateRequestId();
 
@@ -76,26 +75,16 @@ export class RequestManager {
         this.pendingRequests.set(requestId, pendingRequest);
         this.stats.totalRequests++;
 
-        try {
-            const result = await this.executeRequest(
-                method,
-                params,
-                pendingRequest,
-                requestOptions,
-            );
-            this.stats.successfulRequests++;
-            return LSPResult.success(result as R);
-        } catch (error) {
-            if (abortController.signal.aborted) {
-                this.stats.cancelledRequests++;
-                return LSPResult.cancelled('Request was cancelled');
-            } else {
-                this.stats.failedRequests++;
-                return LSPResult.error(normalizeError(error, method));
-            }
-        } finally {
+        const resultPromise = this.executeRequest<P, R>(
+            method,
+            params,
+            pendingRequest,
+            requestOptions,
+        ).finally(() => {
             this.pendingRequests.delete(requestId);
-        }
+        });
+
+        return new AsyncResult<R, LSPError[]>(resultPromise);
     }
 
     /**
@@ -135,8 +124,8 @@ export class RequestManager {
         params: P,
         pendingRequest: PendingRequest,
         options: Required<RequestOptions>,
-    ): Promise<R> {
-        let lastError: Error | undefined;
+    ): Promise<Result<R, LSPError[]>> {
+        const allErrors: LSPError[] = [];
 
         for (let attempt = 0; attempt <= options.retries; attempt++) {
             try {
@@ -172,7 +161,8 @@ export class RequestManager {
                         this.createCancellationToken(combinedController.signal),
                     );
                     clearTimeout(timeout);
-                    return result as R;
+                    this.stats.successfulRequests++;
+                    return Ok(result as R);
                 } finally {
                     pendingRequest.abortController.signal.removeEventListener(
                         'abort',
@@ -185,15 +175,29 @@ export class RequestManager {
                     clearTimeout(timeout);
                 }
             } catch (error) {
-                lastError =
-                    error instanceof Error ? error : new Error(String(error));
+                const normalizedError =
+                    error instanceof LSPError
+                        ? error
+                        : new LSPError(
+                              error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                              ErrorCodes.InternalError,
+                              method,
+                          );
+                allErrors.push(normalizedError);
 
                 if (pendingRequest.abortController.signal.aborted) {
-                    throw lastError;
+                    this.stats.cancelledRequests++;
+                    return Err(allErrors);
                 }
 
-                if (shouldNotRetryError(error) || attempt >= options.retries) {
-                    throw lastError;
+                if (
+                    normalizedError.shouldNotRetry ||
+                    attempt >= options.retries
+                ) {
+                    this.stats.failedRequests++;
+                    return Err(allErrors);
                 }
 
                 // Wait before retry with exponential backoff
@@ -206,7 +210,19 @@ export class RequestManager {
             }
         }
 
-        throw lastError || new Error('Request failed after all retries');
+        // All retries exhausted
+        this.stats.failedRequests++;
+        return Err(
+            allErrors.length > 0
+                ? allErrors
+                : [
+                      new LSPError(
+                          'Request failed after all retries',
+                          ErrorCodes.InternalError,
+                          method,
+                      ),
+                  ],
+        );
     }
 
     /**
