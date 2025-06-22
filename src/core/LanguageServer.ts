@@ -690,23 +690,25 @@ export class LanguageServer implements Disposable {
 
     private setupConnectionManagerHandlers(): void {
         // Handle connection state changes
-        const stateChangeDisposable = this.connectionManager.onStateChange(
+        const stateChangeResult = this.connectionManager.onStateChange(
             (state) => {
                 this.setState(state);
             },
         );
+
         this.subscriptions.push({
-            dispose: () => (stateChangeDisposable as any).dispose(),
-            [Symbol.dispose]: () => (stateChangeDisposable as any).dispose(),
+            dispose: () => stateChangeResult.dispose(),
+            [Symbol.dispose]: () => stateChangeResult.dispose(),
         } as any);
 
         // Handle connection errors
-        const errorDisposable = this.connectionManager.onError((error) => {
+        const errorResult = this.connectionManager.onError((error) => {
             this.emitError(error);
         });
+
         this.subscriptions.push({
-            dispose: () => (errorDisposable as any).dispose(),
-            [Symbol.dispose]: () => (errorDisposable as any).dispose(),
+            dispose: () => errorResult.dispose(),
+            [Symbol.dispose]: () => errorResult.dispose(),
         } as any);
     }
 

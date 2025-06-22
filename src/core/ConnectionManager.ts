@@ -1,585 +1,83 @@
 /**
- * Connection Manager for LSP client using Microsoft's createConnection approach.
- *
- * This class wraps Microsoft's vscode-languageserver-protocol createConnection
- * with WebSocket transport and adds Zed-style improvements for monitoring,
- * error handling, and resource management.
+ * Simplified Connection Manager using ReconnectingWebSocket
  */
-
-import {
-    MessageReader,
-    MessageWriter,
-    Disposable,
-    Logger,
-    ErrorCodes,
-} from 'vscode-languageserver-protocol';
 
 import { createConnection, Connection } from 'vscode-languageserver/node.js';
-import { Result, Ok, Err, AsyncResult } from 'ts-results-es';
-import { LSPError } from '../types/ErrorConverter.js';
+import ReconnectingWebSocket from 'reconnecting-websocket';
+import * as WS from 'ws';
 
-import {
-    WebSocketMessageReader,
-    WebSocketMessageReaderOptions,
-} from '../transport/WebSocketMessageReader.js';
-import {
-    WebSocketMessageWriter,
-    WebSocketMessageWriterOptions,
-} from '../transport/WebSocketMessageWriter.js';
+import { WebSocketMessageReader } from '../transport/WebSocketMessageReader.js';
+import { WebSocketMessageWriter } from '../transport/WebSocketMessageWriter.js';
 
-import { ServerState as ConnectionState } from '../types/index.js';
-
-/**
- * Reconnection configuration
- */
-interface ReconnectOptions {
-    enabled: boolean;
-    maxAttempts: number;
-    initialDelay: number;
-    maxDelay: number;
-    backoffMultiplier: number;
-}
-
-/**
- * Connection Manager Options
- */
 export interface ConnectionManagerOptions {
-    /**
-     * WebSocket URL for connection
-     */
     wsUrl: string;
-
-    /**
-     * Message reader options
-     */
-    reader?: WebSocketMessageReaderOptions;
-
-    /**
-     * Message writer options
-     */
-    writer?: WebSocketMessageWriterOptions;
-
-    /**
-     * Custom logger
-     */
-    logger?: Logger;
-
-    /**
-     * Connection timeout in milliseconds
-     */
+    maxRetries?: number;
     connectionTimeout?: number;
-
-    /**
-     * Reconnection options
-     */
-    reconnectOptions?: ReconnectOptions;
+    debug?: boolean;
 }
 
-/**
- * Connection Manager using Microsoft's createConnection with WebSocket transport
- */
-export class ConnectionManager implements Disposable {
-    private webSocket: WebSocket | null = null;
-    private reader: WebSocketMessageReader | null = null;
-    private writer: WebSocketMessageWriter | null = null;
+export class ConnectionManager {
+    private webSocket: ReconnectingWebSocket | null = null;
     private connection: Connection | null = null;
-    private disposed: boolean = false;
 
-    // State management (Zed-style)
-    private state: ConnectionState = ConnectionState.Initial;
-    private readonly subscriptions: Disposable[] = [];
+    constructor(private options: ConnectionManagerOptions) {}
 
-    // Reconnection management
-    private reconnectAttempts: number = 0;
-    private reconnectTimer: NodeJS.Timeout | null = null;
-
-    // Event handlers
-    private readonly stateChangeHandlers: Array<
-        (state: ConnectionState) => void
-    > = [];
-    private readonly errorHandlers: Array<(error: Error) => void> = [];
-
-    constructor(private options: ConnectionManagerOptions) {
-        this.validateOptions();
-    }
-
-    /**
-     * Create and establish the LSP connection
-     */
-    connect(): AsyncResult<Connection, LSPError[]> {
+    async connect(): Promise<Connection> {
         if (this.connection) {
-            return new AsyncResult(
-                Err([
-                    new LSPError(
-                        'Connection already exists',
-                        ErrorCodes.InvalidRequest,
-                        'connect',
-                    ),
-                ]),
-            );
+            return this.connection;
         }
 
-        if (this.disposed) {
-            return new AsyncResult(
-                Err([
-                    new LSPError(
-                        'ConnectionManager has been disposed',
-                        ErrorCodes.InvalidRequest,
-                        'connect',
-                    ),
-                ]),
+        // Create ReconnectingWebSocket
+        this.webSocket = new ReconnectingWebSocket(this.options.wsUrl, [], {
+            WebSocket: WS,
+            maxRetries: this.options.maxRetries ?? 10,
+            connectionTimeout: this.options.connectionTimeout ?? 10000,
+            debug: this.options.debug ?? false,
+        });
+
+        // Wait for connection
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(
+                () => reject(new Error('Connection timeout')),
+                this.options.connectionTimeout ?? 10000,
             );
-        }
 
-        this.setState(ConnectionState.Connecting);
+            this.webSocket!.addEventListener('open', () => {
+                clearTimeout(timeout);
+                resolve(undefined);
+            });
 
-        const connectPromise = (async (): Promise<
-            Result<Connection, LSPError[]>
-        > => {
-            try {
-                // Create WebSocket connection
-                await this.createWebSocket();
+            this.webSocket!.addEventListener('error', (event) => {
+                clearTimeout(timeout);
+                reject(new Error(`Connection failed: ${event.message}`));
+            });
+        });
 
-                // Create message reader/writer
-                this.createMessageReaderWriter();
+        // Create LSP connection
+        const reader = new WebSocketMessageReader(this.webSocket as any);
+        const writer = new WebSocketMessageWriter(this.webSocket as any);
+        this.connection = createConnection(reader, writer);
+        this.connection.listen();
 
-                // Create Microsoft's ProtocolConnection
-                this.connection = this.createProtocolConnection();
-
-                // Setup event handlers
-                this.setupConnectionHandlers();
-
-                this.setState(ConnectionState.Running);
-                this.resetReconnectAttempts();
-
-                this.log('INFO', 'LSP connection established');
-                return Ok(this.connection);
-            } catch (error) {
-                this.setState(ConnectionState.Stopped);
-                this.handleConnectionError(error);
-
-                const lspError =
-                    error instanceof LSPError
-                        ? error
-                        : new LSPError(
-                              error instanceof Error
-                                  ? error.message
-                                  : String(error),
-                              ErrorCodes.InternalError,
-                              'connect',
-                          );
-
-                return Err([lspError]);
-            }
-        })();
-
-        return new AsyncResult(connectPromise);
+        return this.connection;
     }
 
-    /**
-     * Get the current connection (null if not connected)
-     */
     getConnection(): Connection | null {
         return this.connection;
     }
 
-    /**
-     * Check if currently connected
-     */
     isConnected(): boolean {
-        return (
-            this.connection !== null &&
-            this.state === ConnectionState.Running &&
-            this.webSocket?.readyState === WebSocket.OPEN
-        );
+        return this.webSocket?.readyState === ReconnectingWebSocket.OPEN;
     }
 
-    /**
-     * Get current connection state
-     */
-    getState(): ConnectionState {
-        return this.state;
+    close(): void {
+        this.connection?.dispose();
+        this.webSocket?.close();
+        this.connection = null;
+        this.webSocket = null;
     }
 
-    /**
-     * Close the connection
-     */
-    close(): AsyncResult<void, LSPError[]> {
-        if (this.disposed) {
-            return new AsyncResult(Ok(undefined));
-        }
-
-        this.setState(ConnectionState.Stopping);
-        this.clearReconnectTimer();
-
-        const closePromise = (async (): Promise<Result<void, LSPError[]>> => {
-            try {
-                // Close connection first
-                if (this.connection) {
-                    this.connection.dispose();
-                    this.connection = null;
-                }
-
-                // Close WebSocket
-                if (this.webSocket) {
-                    this.webSocket.close();
-                    this.webSocket = null;
-                }
-
-                // Clean up reader/writer
-                this.reader?.dispose();
-                this.writer?.dispose();
-                this.reader = null;
-                this.writer = null;
-
-                this.setState(ConnectionState.Stopped);
-                this.log('INFO', 'LSP connection closed');
-                return Ok(undefined);
-            } catch (error) {
-                this.handleConnectionError(error);
-
-                const lspError =
-                    error instanceof LSPError
-                        ? error
-                        : new LSPError(
-                              error instanceof Error
-                                  ? error.message
-                                  : String(error),
-                              ErrorCodes.InternalError,
-                              'close',
-                          );
-
-                return Err([lspError]);
-            }
-        })();
-
-        return new AsyncResult(closePromise);
-    }
-
-    /**
-     * Register state change handler
-     */
-    onStateChange(handler: (state: ConnectionState) => void): Disposable {
-        this.stateChangeHandlers.push(handler);
-        return {
-            dispose: () => {
-                const index = this.stateChangeHandlers.indexOf(handler);
-                if (index >= 0) {
-                    this.stateChangeHandlers.splice(index, 1);
-                }
-            },
-        };
-    }
-
-    /**
-     * Register error handler
-     */
-    onError(handler: (error: Error) => void): Disposable {
-        this.errorHandlers.push(handler);
-        return {
-            dispose: () => {
-                const index = this.errorHandlers.indexOf(handler);
-                if (index >= 0) {
-                    this.errorHandlers.splice(index, 1);
-                }
-            },
-        };
-    }
-
-    /**
-     * Dispose the connection manager
-     */
     dispose(): void {
-        if (this.disposed) {
-            return;
-        }
-
-        this.disposed = true;
-        this.clearReconnectTimer();
-
-        // Close connection
-        this.close().promise.catch((result) => {
-            if (result.isErr()) {
-                this.log(
-                    'ERROR',
-                    `Error during disposal: ${result.error[0]?.message}`,
-                );
-            }
-        });
-
-        // Dispose all subscriptions
-        this.subscriptions.forEach((sub) => {
-            try {
-                sub.dispose();
-            } catch (error) {
-                this.log('ERROR', `Error disposing subscription: ${error}`);
-            }
-        });
-        this.subscriptions.length = 0;
-
-        // Clear handlers
-        this.stateChangeHandlers.length = 0;
-        this.errorHandlers.length = 0;
-    }
-
-    /**
-     * Create WebSocket connection
-     */
-    private async createWebSocket(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            try {
-                this.webSocket = new WebSocket(this.options.wsUrl);
-
-                const timeout = setTimeout(() => {
-                    this.webSocket?.close();
-                    reject(
-                        new Error(
-                            `Connection timeout after ${this.options.connectionTimeout || 10000}ms`,
-                        ),
-                    );
-                }, this.options.connectionTimeout || 10000);
-
-                this.webSocket.onopen = () => {
-                    clearTimeout(timeout);
-                    this.log('INFO', 'WebSocket connection opened');
-                    resolve();
-                };
-
-                this.webSocket.onerror = (event) => {
-                    clearTimeout(timeout);
-                    reject(new Error(`WebSocket error: ${event}`));
-                };
-
-                this.webSocket.onclose = (event) => {
-                    clearTimeout(timeout);
-                    if (event.code !== 1000) {
-                        // Not a normal closure
-                        this.handleConnectionClosed();
-                    }
-                };
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-
-    /**
-     * Create message reader and writer
-     */
-    private createMessageReaderWriter(): void {
-        if (!this.webSocket) {
-            throw new Error('WebSocket not available');
-        }
-
-        this.reader = new WebSocketMessageReader(
-            this.webSocket,
-            this.options.reader,
-        );
-        this.writer = new WebSocketMessageWriter(
-            this.webSocket,
-            this.options.writer,
-        );
-    }
-
-    /**
-     * Create Microsoft Connection using createConnection
-     */
-    private createProtocolConnection(): Connection {
-        if (!this.reader || !this.writer) {
-            throw new Error('MessageReader/Writer not available');
-        }
-
-        // Use Microsoft's createConnection - this is the key integration point!
-        const connection = createConnection(
-            this.reader as MessageReader,
-            this.writer as MessageWriter,
-        );
-
-        return connection;
-    }
-
-    /**
-     * Setup connection event handlers
-     */
-    private setupConnectionHandlers(): void {
-        if (!this.connection) {
-            return;
-        }
-
-        // Handle connection errors and close via WebSocket events
-        if (this.webSocket) {
-            this.webSocket.addEventListener('error', (event) => {
-                this.handleConnectionError(
-                    new Error(`WebSocket error: ${event}`),
-                );
-            });
-
-            this.webSocket.addEventListener('close', () => {
-                this.handleConnectionClosed();
-            });
-        }
-
-        // Listen for connection to be ready
-        this.connection.listen();
-    }
-
-    /**
-     * Handle connection errors
-     */
-    private handleConnectionError(error: any): void {
-        this.log('ERROR', `Connection error: ${error.message || error}`);
-
-        this.errorHandlers.forEach((handler) => {
-            try {
-                handler(
-                    error instanceof Error ? error : new Error(String(error)),
-                );
-            } catch (e) {
-                this.log('ERROR', `Error in error handler: ${e}`);
-            }
-        });
-
-        this.handleReconnection();
-    }
-
-    /**
-     * Handle connection closed
-     */
-    private handleConnectionClosed(): void {
-        this.setState(ConnectionState.Stopped);
-        this.log('INFO', 'Connection closed');
-        this.handleReconnection();
-    }
-
-    /**
-     * Handle reconnection logic
-     */
-    private handleReconnection(): void {
-        const reconnectOptions = this.options.reconnectOptions || {
-            enabled: true,
-            maxAttempts: 5,
-            initialDelay: 1000,
-            maxDelay: 30000,
-            backoffMultiplier: 2,
-        };
-
-        if (
-            !reconnectOptions.enabled ||
-            this.disposed ||
-            this.reconnectAttempts >= reconnectOptions.maxAttempts
-        ) {
-            return;
-        }
-
-        this.reconnectAttempts++;
-
-        const delay = Math.min(
-            reconnectOptions.initialDelay *
-                Math.pow(
-                    reconnectOptions.backoffMultiplier,
-                    this.reconnectAttempts - 1,
-                ),
-            reconnectOptions.maxDelay,
-        );
-
-        this.log(
-            'INFO',
-            `Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`,
-        );
-
-        this.reconnectTimer = setTimeout(async () => {
-            try {
-                const closeResult = await this.close().promise;
-                if (closeResult.isOk()) {
-                    const connectResult = await this.connect().promise;
-                    if (connectResult.isErr()) {
-                        this.log(
-                            'ERROR',
-                            `Reconnection failed: ${connectResult.error}`,
-                        );
-                    }
-                }
-            } catch (error) {
-                this.log('ERROR', `Reconnection failed: ${error}`);
-            }
-        }, delay);
-    }
-
-    /**
-     * Set connection state and notify handlers
-     */
-    private setState(newState: ConnectionState): void {
-        if (this.state === newState) {
-            return;
-        }
-
-        const oldState = this.state;
-        this.state = newState;
-
-        this.log('INFO', `State changed: ${oldState} -> ${newState}`);
-
-        this.stateChangeHandlers.forEach((handler) => {
-            try {
-                handler(newState);
-            } catch (error) {
-                this.log('ERROR', `Error in state change handler: ${error}`);
-            }
-        });
-    }
-
-    /**
-     * Reset reconnection attempts
-     */
-    private resetReconnectAttempts(): void {
-        this.reconnectAttempts = 0;
-        this.clearReconnectTimer();
-    }
-
-    /**
-     * Clear reconnection timer
-     */
-    private clearReconnectTimer(): void {
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
-    }
-
-    /**
-     * Validate connection options
-     */
-    private validateOptions(): void {
-        if (!this.options.wsUrl) {
-            throw new Error('wsUrl is required');
-        }
-
-        try {
-            new URL(this.options.wsUrl);
-        } catch {
-            throw new Error('Invalid WebSocket URL');
-        }
-    }
-
-    /**
-     * Internal logging
-     */
-    private log(level: string, message: string): void {
-        if (this.options.logger) {
-            switch (level) {
-                case 'ERROR':
-                    this.options.logger.error(message);
-                    break;
-                case 'WARN':
-                    this.options.logger.warn(message);
-                    break;
-                case 'INFO':
-                    this.options.logger.info(message);
-                    break;
-                default:
-                    this.options.logger.log(message);
-            }
-        } else {
-            console.log(`[ConnectionManager:${level}] ${message}`);
-        }
+        this.close();
     }
 }
