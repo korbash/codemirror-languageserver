@@ -14,8 +14,6 @@ import {
     Emitter,
 } from 'vscode-languageserver-protocol';
 
-import { Subscription } from '../types/Subscription.js';
-
 /**
  * Options for WebSocket message writer configuration
  */
@@ -73,7 +71,7 @@ export class WebSocketMessageWriter implements MessageWriter {
     private disposed = false;
     private writeMessageCount = 0;
     private readonly messageQueue: QueuedMessage[] = [];
-    private readonly subscriptions = new Set<Subscription>();
+    private readonly cleanupFunctions = new Set<() => void>();
 
     // Configuration
     private readonly maxMessageSize: number;
@@ -189,11 +187,15 @@ export class WebSocketMessageWriter implements MessageWriter {
         }
         this.messageQueue.length = 0;
 
-        // Dispose all subscriptions
-        for (const subscription of this.subscriptions) {
-            subscription.dispose();
+        // Run all cleanup functions
+        for (const cleanup of Array.from(this.cleanupFunctions)) {
+            try {
+                cleanup();
+            } catch (error) {
+                // Ignore cleanup errors
+            }
         }
-        this.subscriptions.clear();
+        this.cleanupFunctions.clear();
 
         // Dispose event emitters
         this.onErrorEmitter.dispose();
@@ -329,25 +331,16 @@ export class WebSocketMessageWriter implements MessageWriter {
         this.webSocket.addEventListener('error', errorHandler);
         this.webSocket.addEventListener('close', closeHandler);
 
-        // Create subscriptions for cleanup
-        const openSubscription = new Subscription(
-            () => this.webSocket.removeEventListener('open', openHandler),
-            'websocket-open-handler',
+        // Add cleanup functions
+        this.cleanupFunctions.add(() =>
+            this.webSocket.removeEventListener('open', openHandler),
         );
-
-        const errorSubscription = new Subscription(
-            () => this.webSocket.removeEventListener('error', errorHandler),
-            'websocket-error-handler',
+        this.cleanupFunctions.add(() =>
+            this.webSocket.removeEventListener('error', errorHandler),
         );
-
-        const closeSubscription = new Subscription(
-            () => this.webSocket.removeEventListener('close', closeHandler),
-            'websocket-close-handler',
+        this.cleanupFunctions.add(() =>
+            this.webSocket.removeEventListener('close', closeHandler),
         );
-
-        this.subscriptions.add(openSubscription);
-        this.subscriptions.add(errorSubscription);
-        this.subscriptions.add(closeSubscription);
     }
 
     /**

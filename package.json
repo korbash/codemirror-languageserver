@@ -70,6 +70,7 @@
     },
     "dependencies": {
         "reconnecting-websocket": "^4.4.0",
+        "rxjs": "^7.8.2",
         "ts-custom-error": "^3.3.1",
         "ts-results-es": "^5.0.1",
         "tslib": "^2.8.1"

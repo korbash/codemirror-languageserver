@@ -10,7 +10,7 @@ export * from 'vscode-languageserver-protocol';
 
 // === Our Extensions ===
 export { Result, Ok, Err, AsyncResult } from 'ts-results-es';
-export * from './Subscription.js';
+
 export * from './ErrorConverter.js';
 
 // === Convenience type aliases ===
@@ -43,7 +43,7 @@ import type {
 } from 'vscode-languageserver-protocol';
 
 import type { Result, AsyncResult } from 'ts-results-es';
-import type { Subscription, CompositeSubscription } from './Subscription.js';
+
 import type { LSPError } from './ErrorConverter.js';
 
 // === Handler Types ===
@@ -113,16 +113,15 @@ export interface LanguageServerOptions {
 // === Transport Types ===
 export interface Transport {
     send(message: string): Promise<void>;
-    onMessage(handler: (message: string) => void): Subscription;
-    onError(handler: (error: Error) => void): Subscription;
-    onClose(handler: () => void): Subscription;
+    onMessage(handler: (message: string) => void): () => void;
+    onError(handler: (error: Error) => void): () => void;
+    onClose(handler: () => void): () => void;
     close(): Promise<void>;
     isConnected(): boolean;
 }
 
 // === Server State ===
 export enum ServerState {
-    Initial = 'initial',
     Connecting = 'connecting',
     Initializing = 'initializing',
     Running = 'running',
@@ -146,10 +145,6 @@ export interface PerformanceMetrics {
 // === Type Guards ===
 export function isResult<T, E>(value: unknown): value is Result<T, E> {
     return value instanceof Object && 'isOk' in value && 'isErr' in value;
-}
-
-export function isSubscription(value: unknown): value is Subscription {
-    return value instanceof Object && 'dispose' in value && 'isActive' in value;
 }
 
 // === Auto-generated LSP Method Constants ===
@@ -324,5 +319,5 @@ export interface TypedConnection {
     onTypedNotification<K extends LSPNotificationMethod>(
         method: K,
         handler: NotificationHandler<ExtractNotificationParams<K>>,
-    ): Subscription;
+    ): () => void;
 }

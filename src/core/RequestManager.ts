@@ -1,5 +1,5 @@
 /**
- * Simplified RequestManager - only stats and cancellation by ID
+ * RequestManager with state checking and request lifecycle management
  */
 
 import { Connection } from 'vscode-languageserver';
@@ -40,12 +40,13 @@ export class RequestManager {
         cancelledRequests: 0,
     };
 
-    constructor(private readonly connection: Connection) {}
+    constructor() {}
 
     /**
      * Send LSP request with simplified options
      */
     sendRequest<P, R>(
+        connection: Connection,
         method: LSPMethodValue,
         params: P,
         options: RequestOptions = {},
@@ -79,6 +80,7 @@ export class RequestManager {
         // executeRequest will handle individual attempt timeouts
 
         const resultPromise = this.executeRequest<P, R>(
+            connection,
             method,
             params,
             pendingRequest,
@@ -124,6 +126,7 @@ export class RequestManager {
      * Execute request with retry logic using functional Result patterns
      */
     private async executeRequest<P, R>(
+        connection: Connection,
         method: LSPMethodValue | string,
         params: P,
         pendingRequest: PendingRequest,
@@ -168,7 +171,7 @@ export class RequestManager {
             // Use Result.wrapAsync for the request operation
             const attemptResult = await Result.wrapAsync(async () => {
                 try {
-                    const result = await this.connection.sendRequest(
+                    const result = await connection.sendRequest(
                         method,
                         params,
                         this.createCancellationToken(combinedSignal),
@@ -248,11 +251,29 @@ export class RequestManager {
         };
     }
 
-    private generateRequestId(): string {
-        return `req_${++this.requestCounter}`;
+    /**
+     * Cancel all pending requests
+     */
+    cancelAll(reason?: string): void {
+        const requestIds = Array.from(this.pendingRequests.keys());
+        for (const requestId of requestIds) {
+            const pendingRequest = this.pendingRequests.get(requestId);
+            if (pendingRequest) {
+                pendingRequest.abortController.abort(reason);
+                this.stats.cancelledRequests++;
+            }
+        }
+        this.pendingRequests.clear();
     }
 
-    private sleep(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
+    /**
+     * Dispose the request manager
+     */
+    dispose(): void {
+        this.cancelAll('RequestManager disposed');
+    }
+
+    private generateRequestId(): string {
+        return `req_${++this.requestCounter}`;
     }
 }
