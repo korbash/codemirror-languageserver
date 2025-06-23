@@ -120,16 +120,6 @@ export interface Transport {
     isConnected(): boolean;
 }
 
-// === Server State ===
-export enum ServerState {
-    Connecting = 'connecting',
-    Initializing = 'initializing',
-    Running = 'running',
-    Stopping = 'stopping',
-    Stopped = 'stopped',
-    Error = 'error',
-}
-
 // === Performance Monitoring ===
 export interface PerformanceMetrics {
     method: string;

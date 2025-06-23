@@ -20,6 +20,9 @@ export interface RequestStats {
     successfulRequests: number;
     failedRequests: number;
     cancelledRequests: number;
+    totalNotifications: number;
+    successfulNotifications: number;
+    failedNotifications: number;
 }
 
 const DEFAULT_REQUEST_OPTIONS: Required<RequestOptions> = {
@@ -31,6 +34,7 @@ const DEFAULT_REQUEST_OPTIONS: Required<RequestOptions> = {
 };
 
 export class RequestManager {
+    private readonly connection: Connection;
     private requestCounter = 0;
     private readonly pendingRequests = new Map<string, PendingRequest>();
     private readonly stats: RequestStats = {
@@ -38,15 +42,19 @@ export class RequestManager {
         successfulRequests: 0,
         failedRequests: 0,
         cancelledRequests: 0,
+        totalNotifications: 0,
+        successfulNotifications: 0,
+        failedNotifications: 0,
     };
 
-    constructor() {}
+    constructor(connection: Connection) {
+        this.connection = connection;
+    }
 
     /**
      * Send LSP request with simplified options
      */
     sendRequest<P, R>(
-        connection: Connection,
         method: LSPMethodValue,
         params: P,
         options: RequestOptions = {},
@@ -80,7 +88,6 @@ export class RequestManager {
         // executeRequest will handle individual attempt timeouts
 
         const resultPromise = this.executeRequest<P, R>(
-            connection,
             method,
             params,
             pendingRequest,
@@ -91,6 +98,26 @@ export class RequestManager {
         });
 
         return new AsyncResult<R, LSPError[]>(resultPromise);
+    }
+
+    /**
+     * Send LSP notification with error handling and statistics
+     */
+    sendNotification<P>(
+        connection: Connection,
+        method: LSPMethodValue | string,
+        params: P,
+    ): Result<void, LSPError> {
+        this.stats.totalNotifications++;
+
+        try {
+            connection.sendNotification(method, params);
+            this.stats.successfulNotifications++;
+            return Ok(undefined);
+        } catch (error) {
+            this.stats.failedNotifications++;
+            return Err(LSPError.normalize(error));
+        }
     }
 
     /**
@@ -109,13 +136,6 @@ export class RequestManager {
     }
 
     /**
-     * Get current statistics
-     */
-    getStats(): RequestStats {
-        return { ...this.stats };
-    }
-
-    /**
      * Get pending request IDs
      */
     getPendingRequestIds(): string[] {
@@ -126,7 +146,6 @@ export class RequestManager {
      * Execute request with retry logic using functional Result patterns
      */
     private async executeRequest<P, R>(
-        connection: Connection,
         method: LSPMethodValue | string,
         params: P,
         pendingRequest: PendingRequest,
@@ -151,66 +170,39 @@ export class RequestManager {
                 ]);
             }
 
-            // Calculate timeout for this attempt (grows with retries)
-            const attemptTimeout =
+            // Combine user abort signal with timeout for this attempt
+            const timeout =
                 options.firstTimeout *
                 Math.pow(options.retryCoefficient, attempt);
-
-            // Create timeout controller for this attempt
-            const timeoutController = new AbortController();
-            const timeout = setTimeout(() => {
-                timeoutController.abort('Request timeout');
-            }, attemptTimeout);
-
-            // Combine user abort signal with timeout for this attempt
             const combinedSignal = AbortSignal.any([
                 abortSignal,
-                timeoutController.signal,
+                AbortSignal.timeout(timeout),
             ]);
 
-            // Use Result.wrapAsync for the request operation
-            const attemptResult = await Result.wrapAsync(async () => {
-                try {
-                    const result = await connection.sendRequest(
-                        method,
-                        params,
-                        this.createCancellationToken(combinedSignal),
-                    );
-                    this.stats.successfulRequests++;
-                    return result as R;
-                } finally {
-                    clearTimeout(timeout);
+            let attemptResult: Result<R, LSPError>;
+            try {
+                const result = await this.connection.sendRequest<R>(
+                    method,
+                    params,
+                    this.createCancellationToken(combinedSignal),
+                );
+                attemptResult = Ok(result);
+                this.stats.successfulRequests++;
+                return attemptResult;
+            } catch (error) {
+                attemptResult = Err(LSPError.normalize(error));
+                allErrors.push(attemptResult.error);
+
+                if (pendingRequest.abortController.signal.aborted) {
+                    this.stats.cancelledRequests++;
+                } else if (
+                    attemptResult.error.shouldNotRetry ||
+                    attempt >= options.retries
+                ) {
+                    this.stats.failedRequests++;
+                } else {
+                    continue;
                 }
-            }).then((result) =>
-                result.mapErr((error) =>
-                    error instanceof LSPError
-                        ? error
-                        : new LSPError(
-                              error instanceof Error
-                                  ? error.message
-                                  : String(error),
-                              ErrorCodes.InternalError,
-                              method,
-                          ),
-                ),
-            );
-
-            // Handle successful result
-            if (attemptResult.isOk()) {
-                return Ok(attemptResult.unwrap());
-            }
-
-            // Handle error case
-            const error = attemptResult.unwrapErr();
-            allErrors.push(error);
-
-            if (pendingRequest.abortController.signal.aborted) {
-                this.stats.cancelledRequests++;
-                return Err(allErrors);
-            }
-
-            if (error.shouldNotRetry || attempt >= options.retries) {
-                this.stats.failedRequests++;
                 return Err(allErrors);
             }
         }
@@ -266,14 +258,11 @@ export class RequestManager {
         this.pendingRequests.clear();
     }
 
-    /**
-     * Dispose the request manager
-     */
-    dispose(): void {
-        this.cancelAll('RequestManager disposed');
-    }
-
     private generateRequestId(): string {
         return `req_${++this.requestCounter}`;
+    }
+
+    [Symbol.dispose](): void {
+        this.cancelAll('RequestManager disposed');
     }
 }

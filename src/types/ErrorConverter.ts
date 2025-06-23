@@ -15,22 +15,25 @@ import {
 export class LSPError extends CustomError {
     public readonly code: number;
     public readonly method: string;
-    public readonly data?: any;
     public readonly type: 'cancelled' | 'timeout' | 'error';
+    public readonly source: string;
     public readonly shouldNotRetry: boolean;
 
     constructor(
         message: string,
         code: number,
         method: string,
-        data?: any,
+        stack?: string,
+        cause?: unknown,
         type?: 'cancelled' | 'timeout' | 'error',
+        source?: string,
     ) {
         super(message);
         this.code = code;
         this.method = method;
-        this.data = data;
-
+        this.stack = stack;
+        this.cause = cause;
+        this.source = source ?? 'LSPError';
         // Calculate type based on provided type or code
         if (type) {
             this.type = type;
@@ -71,7 +74,37 @@ export class LSPError extends CustomError {
             responseError.message,
             responseError.code,
             method,
-            responseError.data,
+            responseError.stack,
+            responseError.cause,
+            undefined, // type will be calculated from code
+            'ResponseError', // source
         );
+    }
+    static normalize(error: unknown, method: string = 'unknown') {
+        if (error instanceof LSPError) {
+            return error;
+        } else if (error instanceof ResponseError) {
+            return this.fromResponseError(error, method);
+        } else if (error instanceof Error) {
+            return new LSPError(
+                error.message,
+                ErrorCodes.InternalError,
+                method,
+                error.stack,
+                error.cause,
+                undefined,
+                error.constructor.name,
+            );
+        } else {
+            return new LSPError(
+                String(error),
+                ErrorCodes.InternalError,
+                method,
+                undefined,
+                undefined,
+                undefined,
+                'unknown',
+            );
+        }
     }
 }

@@ -1,16 +1,16 @@
 /**
- * Ultra-minimal Language Server Protocol Client
+ * Ultra-minimal Language Server Protocol Client with Type-Safe Connection State
  * - WebSocket auto-connects on creation
  * - LSP initializes automatically on WebSocket open
- * - No subscription management
- * - Only request/notification sending
+ * - Type-safe connection state management with discriminated unions
+ * - Only request/notification sending when connected
  */
 
 import { createConnection, Connection } from 'vscode-languageserver/node.js';
 import ReconnectingWebSocket from 'reconnecting-websocket';
 import * as WS from 'ws';
-import { BehaviorSubject, Subject, Observable } from 'rxjs';
-import { distinctUntilChanged, takeUntil, filter } from 'rxjs/operators';
+import { BehaviorSubject, Subject, Observable, ReplaySubject } from 'rxjs';
+import { timestamp, map } from 'rxjs/operators';
 
 import { WebSocketMessageReader } from '../transport/WebSocketMessageReader.js';
 import { WebSocketMessageWriter } from '../transport/WebSocketMessageWriter.js';
@@ -22,8 +22,13 @@ import type {
     ServerCapabilities,
 } from 'vscode-languageserver-protocol';
 
-import { ServerState } from '../types/index.js';
-import type { LanguageServerOptions, RequestOptions } from '../types/index.js';
+import {
+    LSPError,
+    LSPMethods,
+    type LanguageServerOptions,
+    type RequestOptions,
+} from '../types/index.js';
+import { Server } from 'tls';
 
 export interface LanguageClientOptions extends LanguageServerOptions {
     wsUrl: string;
@@ -68,12 +73,12 @@ const DEFAULT_CLIENT_CAPABILITIES = {
         },
         hover: {
             dynamicRegistration: false,
-            contentFormat: ['plaintext'] as any,
+            contentFormat: ['plaintext' as any],
         },
         signatureHelp: {
             dynamicRegistration: false,
             signatureInformation: {
-                documentationFormat: ['plaintext'],
+                documentationFormat: ['plaintext' as any],
             },
         },
         definition: { dynamicRegistration: false },
@@ -113,109 +118,66 @@ const DEFAULT_CLIENT_CAPABILITIES = {
     },
 };
 
-/**
- * Ultra-minimal LanguageClient - auto-connects and initializes
- */
+// === Type-Safe Connection State ===
+
+export interface ConnectedStatePayload {
+    readonly state: 'running';
+    readonly requestManager: RequestManager;
+    readonly capabilities: ServerCapabilities;
+}
+
+export interface DisconnectedStatePayload {
+    readonly state: 'connecting' | 'initializing' | 'stopping' | 'stopped';
+}
+
+export interface ErrorStatePayload {
+    readonly state: 'error';
+    readonly error: LSPError[];
+}
+
+export type ConnectionPayload =
+    | ConnectedStatePayload
+    | DisconnectedStatePayload
+    | ErrorStatePayload;
+
+// Добавляем time уже в итоговый тип
+export type ConnectionState = ConnectionPayload & { time: Date };
+
 export class LanguageClient {
-    private readonly requestManager = new RequestManager();
     private readonly webSocket: ReconnectingWebSocket;
-    private connection: Connection | null = null;
     private readonly abortController = new AbortController();
 
-    // RxJS state management
-    private readonly stateSubject = new BehaviorSubject<ServerState>(
-        ServerState.Stopped,
-    );
-    private _capabilities: ServerCapabilities | null = null;
-    private readonly capabilitiesSubject =
-        new BehaviorSubject<ServerCapabilities | null>(null);
-    private readonly errorSubject = new Subject<Error>();
-    private readonly destroySubject = new Subject<void>();
+    // 1) Храним только “payload” без time
+    private readonly stateSubject = new ReplaySubject<ConnectionPayload>();
 
-    // Public observables
-    public readonly state$ = this.stateSubject
-        .asObservable()
-        .pipe(distinctUntilChanged(), takeUntil(this.destroySubject));
-
-    public readonly capabilities$ = this.capabilitiesSubject
-        .asObservable()
-        .pipe(distinctUntilChanged(), takeUntil(this.destroySubject));
-
-    public readonly error$ = this.errorSubject
-        .asObservable()
-        .pipe(takeUntil(this.destroySubject));
-
-    public readonly isReady$ = this.state$.pipe(
-        filter((state) => state === ServerState.Running),
-    );
-
-    // Convenience properties
-
-    get abortSignal(): AbortSignal {
-        return this.abortController.signal;
-    }
-
-    get capabilities(): ServerCapabilities | null {
-        return this._capabilities;
-    }
+    // 2) Собираем полный ConnectionState с time
+    public readonly state$: Observable<ConnectionState> =
+        this.stateSubject.pipe(
+            timestamp(), // превращает в { value, timestamp }
+            map(({ value, timestamp }) => ({
+                ...value,
+                time: new Date(timestamp), // здесь “timestamp” из RxJS
+            })),
+        );
 
     constructor(private readonly options: LanguageClientOptions) {
-        // Create WebSocket and auto-connect
+        // Теперь достаточно пушить только payload
+        this.stateSubject.next({ state: 'stopped' });
         this.webSocket = new ReconnectingWebSocket(this.options.wsUrl, [], {
             WebSocket: WS,
-            maxRetries: this.options.maxRetries ?? 10,
+            maxRetries: this.options.maxRetries ?? 5,
             connectionTimeout: this.options.connectionTimeout ?? 10000,
             debug: this.options.debug ?? false,
         });
 
-        // Set up WebSocket callbacks
         this.webSocket.addEventListener('open', () => this.onWebSocketOpen());
         this.webSocket.addEventListener('close', () => this.onWebSocketClose());
-        this.webSocket.addEventListener('error', (event) =>
-            this.onWebSocketError(event),
+        this.webSocket.addEventListener('error', (e) =>
+            this.onWebSocketError(e.error),
         );
 
-        // Start connecting immediately
-        this.stateSubject.next(ServerState.Connecting);
-    }
-
-    /**
-     * Send a generic LSP request
-     */
-    async request<T>(
-        method: string,
-        params: any,
-        options?: RequestOptions,
-    ): Promise<T> {
-        const { abortSignal: externalSignal, ...restOptions } = options ?? {};
-        const abortSignal = externalSignal
-            ? AbortSignal.any([externalSignal, this.abortSignal])
-            : this.abortSignal;
-
-        const resultPromise = this.requestManager.sendRequest(
-            this.connection!,
-            method as any,
-            params,
-            { ...restOptions, abortSignal },
-        );
-
-        const result = await resultPromise.promise;
-        if (result.isOk()) {
-            return result.unwrap() as T;
-        } else {
-            throw result.unwrapErr()[0] || new Error('Request failed');
-        }
-    }
-
-    /**
-     * Send a generic LSP notification
-     */
-    async sendNotification(method: string, params: any): Promise<void> {
-        try {
-            this.connection!.sendNotification(method, params);
-        } catch (error) {
-            // Ignore notification errors
-        }
+        this.stateSubject.next({ state: 'connecting' });
+        this.webSocket.reconnect();
     }
 
     /**
@@ -229,40 +191,70 @@ export class LanguageClient {
     // === Private Methods ===
 
     /**
-     * Handle WebSocket open event - perform LSP initialization
+     * Handle WebSocket open event - perform LSP initialization and create connected state
      */
     private onWebSocketOpen(): void {
-        try {
-            // Create LSP connection
-            const reader = new WebSocketMessageReader(this.webSocket as any);
-            const writer = new WebSocketMessageWriter(this.webSocket as any);
-            this.connection = createConnection(reader, writer);
+        // Create LSP connection
+        const reader = new WebSocketMessageReader(this.webSocket as any);
+        const writer = new WebSocketMessageWriter(this.webSocket as any);
+        const lspConnection = createConnection(reader, writer);
+        // Start listening
+        lspConnection.listen();
 
-            // Start listening
-            this.connection.listen();
+        // Create new request manager for this connection
+        const requestManager = new RequestManager(lspConnection);
 
-            // Initialize LSP asynchronously
-            this.performInitialization().catch((error) => {
-                this.stateSubject.next(ServerState.Error);
-                const errorObj =
-                    error instanceof Error ? error : new Error(String(error));
-                this.errorSubject.next(errorObj);
+        // Initialize LSP asynchronously
+        this.stateSubject.next({ state: 'initializing' });
+        const initializeParams: InitializeParams = {
+            processId: null,
+            rootUri: this.options.rootUri,
+            workspaceFolders: this.options.workspaceFolders?.map(
+                (uri: string) => ({
+                    uri,
+                    name: uri.split('/').pop() || uri,
+                }),
+            ),
+            capabilities: DEFAULT_CLIENT_CAPABILITIES as any,
+            initializationOptions: this.options.initializationOptions,
+        };
+
+        requestManager
+            .sendRequest(LSPMethods.INITIALIZE, initializeParams)
+            .map((response) => {
+                this.stateSubject.next({
+                    state: 'running',
+                    requestManager: requestManager,
+                    capabilities: response as ServerCapabilities, //нужно исправить временная заглушка
+                });
+            })
+            .mapErr((error) => {
+                this.stateSubject.next({
+                    state: 'error',
+                    error: error,
+                });
             });
-        } catch (error) {
-            this.stateSubject.next(ServerState.Error);
-            const errorObj =
-                error instanceof Error ? error : new Error(String(error));
-            this.errorSubject.next(errorObj);
-        }
     }
-
+    //ура всё что выше норм ниже не смотрел
     /**
-     * Handle WebSocket close event - reset state and cancel requests
+     * Handle WebSocket close event - reset to disconnected state and cancel requests
      */
     private onWebSocketClose(): void {
-        this.connection = null;
-        this.requestManager.cancelAll('Connection lost');
-        this._capabilities = null;
+        // Cancel all pending requests if we were connected
+        if (this.isConnectedState(this._connection)) {
+            this._connection.requestManager.cancelAll('Connection lost');
+            this._connection.requestManager.dispose();
+
+            // Dispose LSP connection
+            try {
+                this._connection.lspConnection.dispose();
+            } catch (error) {
+                // Ignore disposal errors
+            }
+        }
+
+        // Reset to disconnected state
+        this._connection = { state: 'disconnected' };
         this.capabilitiesSubject.next(null);
         this.stateSubject.next(ServerState.Stopped);
     }
@@ -276,46 +268,3 @@ export class LanguageClient {
         );
         this.errorSubject.next(error);
     }
-
-    /**
-     * Perform LSP initialization
-     */
-    private async performInitialization(): Promise<void> {
-        this.stateSubject.next(ServerState.Initializing);
-
-        const initializeParams: InitializeParams = {
-            processId: null,
-            rootUri: this.options.rootUri,
-            workspaceFolders: this.options.workspaceFolders?.map((uri) => ({
-                uri,
-                name: uri.split('/').pop() || uri,
-            })),
-            capabilities: DEFAULT_CLIENT_CAPABILITIES,
-            initializationOptions: this.options.initializationOptions,
-        };
-
-        const result = await this.request<InitializeResult>(
-            'initialize',
-            initializeParams,
-        );
-
-        this._capabilities = result.capabilities;
-        this.capabilitiesSubject.next(result.capabilities);
-        await this.sendNotification('initialized', {});
-        this.stateSubject.next(ServerState.Running);
-    }
-
-    /**
-     * Close LSP connection
-     */
-    private closeConnection(): void {
-        if (this.connection) {
-            try {
-                this.connection.dispose();
-            } catch (error) {
-                // Ignore disposal errors
-            }
-            this.connection = null;
-        }
-    }
-}
