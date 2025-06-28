@@ -2,11 +2,14 @@
  * RequestManager with state checking and request lifecycle management
  */
 
-import { Connection } from 'vscode-languageserver';
 import { ErrorCodes, LSPErrorCodes } from 'vscode-languageserver-protocol';
 import { Result, Ok, Err, AsyncResult } from 'ts-results-es';
 import { LSPMethodValue, RequestOptions } from '../types/index.js';
 import { LSPError } from '../types/ErrorConverter.js';
+import {
+    SimpleRequestType,
+    SimpleConnection,
+} from '../types/simple-lsp-client.js';
 
 interface PendingRequest {
     id: string;
@@ -34,7 +37,7 @@ const DEFAULT_REQUEST_OPTIONS: Required<RequestOptions> = {
 };
 
 export class RequestManager {
-    private readonly connection: Connection;
+    private readonly connection: SimpleConnection;
     private requestCounter = 0;
     private readonly pendingRequests = new Map<string, PendingRequest>();
     private readonly stats: RequestStats = {
@@ -47,20 +50,22 @@ export class RequestManager {
         failedNotifications: 0,
     };
 
-    constructor(connection: Connection) {
+    constructor(connection: SimpleConnection) {
         this.connection = connection;
     }
 
     /**
-     * Send LSP request with simplified options
+     * Send LSP request with automatic type inference using SimpleRequestType
      */
-    sendRequest<P, R>(
-        method: LSPMethodValue,
+    sendRequest<P, R, E>(
+        requestType: SimpleRequestType<P, R, E>,
         params: P,
         options: RequestOptions = {},
     ): AsyncResult<R, LSPError[]> {
         const requestOptions = { ...DEFAULT_REQUEST_OPTIONS, ...options };
         const requestId = this.generateRequestId();
+
+        const method = requestType.method;
 
         // Create pending request
         const abortController = new AbortController();
@@ -104,14 +109,13 @@ export class RequestManager {
      * Send LSP notification with error handling and statistics
      */
     sendNotification<P>(
-        connection: Connection,
         method: LSPMethodValue | string,
         params: P,
     ): Result<void, LSPError> {
         this.stats.totalNotifications++;
 
         try {
-            connection.sendNotification(method, params);
+            this.connection.original.sendNotification(method, params);
             this.stats.successfulNotifications++;
             return Ok(undefined);
         } catch (error) {
@@ -181,7 +185,7 @@ export class RequestManager {
 
             let attemptResult: Result<R, LSPError>;
             try {
-                const result = await this.connection.sendRequest<R>(
+                const result = await this.connection.original.sendRequest<R>(
                     method,
                     params,
                     this.createCancellationToken(combinedSignal),

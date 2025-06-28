@@ -12,6 +12,7 @@ export * from 'vscode-languageserver-protocol';
 export { Result, Ok, Err, AsyncResult } from 'ts-results-es';
 
 export * from './ErrorConverter.js';
+export * from './simple-lsp-client.js';
 
 // === Convenience type aliases ===
 import type {

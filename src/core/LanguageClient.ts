@@ -6,15 +6,34 @@
  * - Only request/notification sending when connected
  */
 
-import { createConnection, Connection } from 'vscode-languageserver/node.js';
 import ReconnectingWebSocket from 'reconnecting-websocket';
 import * as WS from 'ws';
-import { BehaviorSubject, Subject, Observable, ReplaySubject } from 'rxjs';
+import {
+    BehaviorSubject,
+    Subject,
+    Observable,
+    ReplaySubject,
+    Subscription,
+} from 'rxjs';
 import { timestamp, map } from 'rxjs/operators';
 
 import { WebSocketMessageReader } from '../transport/WebSocketMessageReader.js';
 import { WebSocketMessageWriter } from '../transport/WebSocketMessageWriter.js';
 import { RequestManager } from './RequestManager.js';
+import {
+    SimpleConnection,
+    createSimpleConnection,
+    SimpleInitializeRequest,
+    SimpleHoverRequest,
+    SimpleCompletionRequest,
+    SimpleDefinitionRequest,
+    SimpleReferencesRequest,
+    type HoverParams,
+    type CompletionParams,
+    type DefinitionParams,
+    type ReferenceParams,
+    type SimpleRequestType,
+} from '../types/simple-lsp-client.js';
 
 import type {
     InitializeParams,
@@ -24,7 +43,6 @@ import type {
 
 import {
     LSPError,
-    LSPMethods,
     type LanguageServerOptions,
     type RequestOptions,
 } from '../types/index.js';
@@ -146,8 +164,9 @@ export type ConnectionState = ConnectionPayload & { time: Date };
 export class LanguageClient {
     private readonly webSocket: ReconnectingWebSocket;
     private readonly abortController = new AbortController();
+    private readonly stateSubscription: Subscription;
 
-    // 1) Храним только “payload” без time
+    // 1) Храним только "payload" без time
     private readonly stateSubject = new ReplaySubject<ConnectionPayload>();
 
     // 2) Собираем полный ConnectionState с time
@@ -156,13 +175,24 @@ export class LanguageClient {
             timestamp(), // превращает в { value, timestamp }
             map(({ value, timestamp }) => ({
                 ...value,
-                time: new Date(timestamp), // здесь “timestamp” из RxJS
+                time: new Date(timestamp), // здесь "timestamp" из RxJS
             })),
         );
+
+    public currentState: ConnectionState = {
+        state: 'stopped',
+        time: new Date(),
+    };
 
     constructor(private readonly options: LanguageClientOptions) {
         // Теперь достаточно пушить только payload
         this.stateSubject.next({ state: 'stopped' });
+
+        // Подписываемся на изменения состояния для автоматического обновления currentState
+        this.stateSubscription = this.state$.subscribe((state) => {
+            this.currentState = state;
+        });
+
         this.webSocket = new ReconnectingWebSocket(this.options.wsUrl, [], {
             WebSocket: WS,
             maxRetries: this.options.maxRetries ?? 5,
@@ -185,6 +215,7 @@ export class LanguageClient {
      */
     [Symbol.dispose](): void {
         this.abortController.abort('Client disposed');
+        this.stateSubscription.unsubscribe();
         this.webSocket.close();
     }
 
@@ -197,7 +228,7 @@ export class LanguageClient {
         // Create LSP connection
         const reader = new WebSocketMessageReader(this.webSocket as any);
         const writer = new WebSocketMessageWriter(this.webSocket as any);
-        const lspConnection = createConnection(reader, writer);
+        const lspConnection = createSimpleConnection(reader, writer);
         // Start listening
         lspConnection.listen();
 
@@ -220,12 +251,12 @@ export class LanguageClient {
         };
 
         requestManager
-            .sendRequest(LSPMethods.INITIALIZE, initializeParams)
+            .sendRequest(SimpleInitializeRequest, initializeParams)
             .map((response) => {
                 this.stateSubject.next({
                     state: 'running',
                     requestManager: requestManager,
-                    capabilities: response as ServerCapabilities, //нужно исправить временная заглушка
+                    capabilities: response.capabilities,
                 });
             })
             .mapErr((error) => {
@@ -239,25 +270,7 @@ export class LanguageClient {
     /**
      * Handle WebSocket close event - reset to disconnected state and cancel requests
      */
-    private onWebSocketClose(): void {
-        // Cancel all pending requests if we were connected
-        if (this.isConnectedState(this._connection)) {
-            this._connection.requestManager.cancelAll('Connection lost');
-            this._connection.requestManager.dispose();
-
-            // Dispose LSP connection
-            try {
-                this._connection.lspConnection.dispose();
-            } catch (error) {
-                // Ignore disposal errors
-            }
-        }
-
-        // Reset to disconnected state
-        this._connection = { state: 'disconnected' };
-        this.capabilitiesSubject.next(null);
-        this.stateSubject.next(ServerState.Stopped);
-    }
+    private onWebSocketClose(): void {}
 
     /**
      * Handle WebSocket error event
@@ -266,5 +279,88 @@ export class LanguageClient {
         const error = new Error(
             `WebSocket error: ${event.message || 'Unknown error'}`,
         );
-        this.errorSubject.next(error);
+        this.stateSubject.next({
+            state: 'error',
+            error: [LSPError.normalize(error)],
+        });
     }
+
+    // === Public LSP Methods ===
+
+    /**
+     * Send hover request with automatic type inference
+     */
+    async textDocumentHover(params: HoverParams, options?: RequestOptions) {
+        if (this.currentState.state !== 'running') {
+            throw new Error(
+                `Cannot send hover request in state: ${this.currentState.state}`,
+            );
+        }
+
+        return this.currentState.requestManager.sendRequest(
+            SimpleHoverRequest,
+            params,
+            options,
+        );
+    }
+
+    /**
+     * Send completion request with automatic type inference
+     */
+    async textDocumentCompletion(
+        params: CompletionParams,
+        options?: RequestOptions,
+    ) {
+        if (this.currentState.state !== 'running') {
+            throw new Error(
+                `Cannot send completion request in state: ${this.currentState.state}`,
+            );
+        }
+
+        return this.currentState.requestManager.sendRequest(
+            SimpleCompletionRequest,
+            params,
+            options,
+        );
+    }
+
+    /**
+     * Send definition request with automatic type inference
+     */
+    async textDocumentDefinition(
+        params: DefinitionParams,
+        options?: RequestOptions,
+    ) {
+        if (this.currentState.state !== 'running') {
+            throw new Error(
+                `Cannot send definition request in state: ${this.currentState.state}`,
+            );
+        }
+
+        return this.currentState.requestManager.sendRequest(
+            SimpleDefinitionRequest,
+            params,
+            options,
+        );
+    }
+
+    /**
+     * Send references request with automatic type inference
+     */
+    async textDocumentReferences(
+        params: ReferenceParams,
+        options?: RequestOptions,
+    ) {
+        if (this.currentState.state !== 'running') {
+            throw new Error(
+                `Cannot send references request in state: ${this.currentState.state}`,
+            );
+        }
+
+        return this.currentState.requestManager.sendRequest(
+            SimpleReferencesRequest,
+            params,
+            options,
+        );
+    }
+}
