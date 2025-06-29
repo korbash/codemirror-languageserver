@@ -11,7 +11,11 @@ import {
     ConnectionOptions,
 } from 'vscode-languageserver/node';
 
-import { MessageReader, MessageWriter } from 'vscode-languageserver-protocol';
+import {
+    MessageReader,
+    MessageWriter,
+    ResponseError,
+} from 'vscode-languageserver-protocol';
 
 // Импортируем типы параметров из protocol
 import {
@@ -115,7 +119,8 @@ export class SimpleConnection {
  */
 export const SimpleInitializeRequest = new SimpleRequestType<
     InitializeParams,
-    InitializeResult
+    InitializeResult,
+    ResponseError
 >('initialize');
 
 /**

@@ -39,6 +39,7 @@ import type {
     InitializeParams,
     InitializeResult,
     ServerCapabilities,
+    ClientCapabilities,
 } from 'vscode-languageserver-protocol';
 
 import {
@@ -56,13 +57,13 @@ export interface LanguageClientOptions extends LanguageServerOptions {
 }
 
 // Default LSP client capabilities constant
-const DEFAULT_CLIENT_CAPABILITIES = {
+const DEFAULT_CLIENT_CAPABILITIES: ClientCapabilities = {
     workspace: {
         applyEdit: false,
         workspaceEdit: {
             documentChanges: false,
             resourceOperations: [],
-            failureHandling: 'abort' as any,
+            failureHandling: 'abort',
         },
         didChangeConfiguration: { dynamicRegistration: false },
         didChangeWatchedFiles: { dynamicRegistration: false },
@@ -91,12 +92,12 @@ const DEFAULT_CLIENT_CAPABILITIES = {
         },
         hover: {
             dynamicRegistration: false,
-            contentFormat: ['plaintext' as any],
+            contentFormat: ['plaintext'],
         },
         signatureHelp: {
             dynamicRegistration: false,
             signatureInformation: {
-                documentationFormat: ['plaintext' as any],
+                documentationFormat: ['plaintext'],
             },
         },
         definition: { dynamicRegistration: false },
@@ -246,10 +247,9 @@ export class LanguageClient {
                     name: uri.split('/').pop() || uri,
                 }),
             ),
-            capabilities: DEFAULT_CLIENT_CAPABILITIES as any,
+            capabilities: DEFAULT_CLIENT_CAPABILITIES,
             initializationOptions: this.options.initializationOptions,
         };
-
         requestManager
             .sendRequest(SimpleInitializeRequest, initializeParams)
             .map((response) => {
