@@ -20,27 +20,28 @@ import { timestamp, map } from 'rxjs/operators';
 import { WebSocketMessageReader } from '../transport/WebSocketMessageReader.js';
 import { WebSocketMessageWriter } from '../transport/WebSocketMessageWriter.js';
 import { RequestManager } from './RequestManager.js';
+
 import {
-    SimpleConnection,
-    createSimpleConnection,
-    SimpleInitializeRequest,
-    SimpleHoverRequest,
-    SimpleCompletionRequest,
-    SimpleDefinitionRequest,
-    SimpleReferencesRequest,
-    type HoverParams,
-    type CompletionParams,
-    type DefinitionParams,
-    type ReferenceParams,
-    type SimpleRequestType,
-} from '../types/simple-lsp-client.js';
+    LSPMethod,
+    LSPParams,
+    LSPResponse,
+} from '../types/lsp-requests-registry.js';
 
 import type {
     InitializeParams,
     InitializeResult,
+    HoverParams,
+    CompletionParams,
+    DefinitionParams,
+    ReferenceParams,
     ServerCapabilities,
     ClientCapabilities,
 } from 'vscode-languageserver-protocol';
+import {
+    createConnection,
+    Connection,
+    RequestType,
+} from 'vscode-languageserver/node';
 
 import {
     LSPError,
@@ -84,7 +85,7 @@ const DEFAULT_CLIENT_CAPABILITIES: ClientCapabilities = {
             completionItem: {
                 snippetSupport: false,
                 commitCharactersSupport: false,
-                documentationFormat: ['plaintext'],
+                documentationFormat: ['plaintext', 'markdown'],
                 deprecatedSupport: false,
                 preselectSupport: false,
             },
@@ -92,12 +93,12 @@ const DEFAULT_CLIENT_CAPABILITIES: ClientCapabilities = {
         },
         hover: {
             dynamicRegistration: false,
-            contentFormat: ['plaintext'],
+            contentFormat: ['plaintext', 'markdown'],
         },
         signatureHelp: {
             dynamicRegistration: false,
             signatureInformation: {
-                documentationFormat: ['plaintext'],
+                documentationFormat: ['plaintext', 'markdown'],
             },
         },
         definition: { dynamicRegistration: false },
@@ -229,7 +230,7 @@ export class LanguageClient {
         // Create LSP connection
         const reader = new WebSocketMessageReader(this.webSocket as any);
         const writer = new WebSocketMessageWriter(this.webSocket as any);
-        const lspConnection = createSimpleConnection(reader, writer);
+        const lspConnection = createConnection(reader, writer);
         // Start listening
         lspConnection.listen();
 
@@ -250,8 +251,10 @@ export class LanguageClient {
             capabilities: DEFAULT_CLIENT_CAPABILITIES,
             initializationOptions: this.options.initializationOptions,
         };
+
+        // Initialize LSP using RequestManager
         requestManager
-            .sendRequest(SimpleInitializeRequest, initializeParams)
+            .sendRequest('initialize', initializeParams)
             .map((response) => {
                 this.stateSubject.next({
                     state: 'running',
@@ -266,7 +269,7 @@ export class LanguageClient {
                 });
             });
     }
-    //ура всё что выше норм ниже не смотрел
+    //методы снизу нужно проработать породумать возможную последовательность
     /**
      * Handle WebSocket close event - reset to disconnected state and cancel requests
      */
@@ -283,84 +286,5 @@ export class LanguageClient {
             state: 'error',
             error: [LSPError.normalize(error)],
         });
-    }
-
-    // === Public LSP Methods ===
-
-    /**
-     * Send hover request with automatic type inference
-     */
-    async textDocumentHover(params: HoverParams, options?: RequestOptions) {
-        if (this.currentState.state !== 'running') {
-            throw new Error(
-                `Cannot send hover request in state: ${this.currentState.state}`,
-            );
-        }
-
-        return this.currentState.requestManager.sendRequest(
-            SimpleHoverRequest,
-            params,
-            options,
-        );
-    }
-
-    /**
-     * Send completion request with automatic type inference
-     */
-    async textDocumentCompletion(
-        params: CompletionParams,
-        options?: RequestOptions,
-    ) {
-        if (this.currentState.state !== 'running') {
-            throw new Error(
-                `Cannot send completion request in state: ${this.currentState.state}`,
-            );
-        }
-
-        return this.currentState.requestManager.sendRequest(
-            SimpleCompletionRequest,
-            params,
-            options,
-        );
-    }
-
-    /**
-     * Send definition request with automatic type inference
-     */
-    async textDocumentDefinition(
-        params: DefinitionParams,
-        options?: RequestOptions,
-    ) {
-        if (this.currentState.state !== 'running') {
-            throw new Error(
-                `Cannot send definition request in state: ${this.currentState.state}`,
-            );
-        }
-
-        return this.currentState.requestManager.sendRequest(
-            SimpleDefinitionRequest,
-            params,
-            options,
-        );
-    }
-
-    /**
-     * Send references request with automatic type inference
-     */
-    async textDocumentReferences(
-        params: ReferenceParams,
-        options?: RequestOptions,
-    ) {
-        if (this.currentState.state !== 'running') {
-            throw new Error(
-                `Cannot send references request in state: ${this.currentState.state}`,
-            );
-        }
-
-        return this.currentState.requestManager.sendRequest(
-            SimpleReferencesRequest,
-            params,
-            options,
-        );
     }
 }

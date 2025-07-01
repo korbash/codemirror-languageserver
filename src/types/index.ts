@@ -12,7 +12,6 @@ export * from 'vscode-languageserver-protocol';
 export { Result, Ok, Err, AsyncResult } from 'ts-results-es';
 
 export * from './ErrorConverter.js';
-export * from './simple-lsp-client.js';
 
 // === Convenience type aliases ===
 import type {
@@ -52,21 +51,17 @@ export type NotificationHandler<T> = (params: T) => void | Promise<void>;
 export type RequestHandler<P, R> = (params: P) => R | Promise<R>;
 export type ProgressHandler = (params: any) => void;
 
-// === Request/Response Type Map ===
-export interface LSPRequestMap {
-    initialize: [InitializeParams, InitializeResult];
-    'textDocument/completion': [
-        CompletionParams,
-        CompletionList | CompletionItem[] | null,
-    ];
-    'textDocument/hover': [HoverParams, Hover | null];
-    'textDocument/definition': [DefinitionParams, Definition | null];
-    'textDocument/references': [ReferenceParams, Location[] | null];
-    'textDocument/documentSymbol': [
-        DocumentSymbolParams,
-        DocumentSymbol[] | SymbolInformation[] | null,
-    ];
-}
+// Import LSP types from registry
+import type {
+    LSPRequestRegistry,
+    LSPMethod,
+    LSPParams,
+    LSPResponse,
+} from './lsp-requests-registry.js';
+
+// Re-export for backwards compatibility
+export type LSPRequestMap = LSPRequestRegistry;
+export type { LSPMethod, LSPParams, LSPResponse };
 
 // === Notification Type Map ===
 export interface LSPNotificationMap {
@@ -286,11 +281,11 @@ export type LSPNotificationValue =
     (typeof LSPNotifications)[keyof typeof LSPNotifications];
 
 // === Utility Types ===
-export type LSPMethod = keyof LSPRequestMap;
 export type LSPNotificationMethod = keyof LSPNotificationMap;
 
-export type ExtractParams<T extends LSPMethod> = LSPRequestMap[T][0];
-export type ExtractResult<T extends LSPMethod> = LSPRequestMap[T][1];
+// For backwards compatibility
+export type ExtractParams<T extends LSPMethod> = LSPParams<T>;
+export type ExtractResult<T extends LSPMethod> = LSPResponse<T>;
 
 export type ExtractNotificationParams<T extends LSPNotificationMethod> =
     LSPNotificationMap[T];
@@ -303,9 +298,9 @@ export type LSPAsyncResult<T> = AsyncResult<T, LSPError[]>;
 export interface TypedConnection {
     sendTypedRequest<K extends LSPMethod>(
         method: K,
-        params: ExtractParams<K>,
+        params: LSPParams<K>,
         token?: CancellationToken,
-    ): Promise<ExtractResult<K>>;
+    ): Promise<LSPResponse<K>>;
 
     onTypedNotification<K extends LSPNotificationMethod>(
         method: K,
